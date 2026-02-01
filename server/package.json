@@ -1,27 +1,25 @@
 {
-  "name": "server",
+  "name": "inbox-triage-server",
   "version": "1.0.0",
+  "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon index.js",
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
-    "better-sqlite3": "^12.6.2",
-    "cors": "^2.8.6",
-    "dotenv": "^17.2.3",
-    "express": "^5.2.1",
-    "express-session": "^1.19.0",
-    "googleapis": "^171.0.0",
-    "openai": "^6.17.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.17.3",
+    "firebase-admin": "^12.5.0",
+    "googleapis": "^140.0.1",
+    "openai": "^4.56.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "zod": "^4.3.6"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "nodemon": "^3.1.4"
   }
 }
