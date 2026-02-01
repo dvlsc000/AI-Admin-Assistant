@@ -1,84 +1,53 @@
-import OpenAI from "openai";
-import { z } from "zod";
-
 /**
- * Strict schema so your server doesn't break.
- * If the AI output is invalid JSON, we throw an error.
+ * Local AI using Ollama (FREE).
+ * Requires: ollama running locally with `llama3` model.
  */
-const TriageSchema = z.object({
-  category: z.enum([
-    "CANCELLATION",
-    "FREEZE_REQUEST",
-    "BOOKING_CHANGE",
-    "BILLING_INVOICE",
-    "COMPLAINT",
-    "GENERAL_QUESTION",
-    "SPAM_OTHER"
-  ]),
-  urgency: z.enum(["LOW", "MEDIUM", "HIGH"]),
-  confidence: z.number().min(0).max(1),
-  reply_draft: z.string().min(1)
-});
 
-export function makeOpenAI(apiKey) {
-  return new OpenAI({ apiKey });
-}
-
-/**
- * Ask OpenAI to classify the email and draft a reply.
- * Returns a validated JS object.
- */
-export async function triageEmail({ openai, model, email }) {
-  const system = `
+export async function triageEmail({ email }) {
+  const prompt = `
 You are an assistant for a small gym.
 
-Tasks:
-1) Choose exactly ONE category from the list.
-2) Choose urgency: LOW / MEDIUM / HIGH.
-3) Draft a short, polite reply (human will approve).
+Return ONLY valid JSON in this exact format:
+{
+  "category": "CANCELLATION | FREEZE_REQUEST | BOOKING_CHANGE | BILLING_INVOICE | COMPLAINT | GENERAL_QUESTION | SPAM_OTHER",
+  "urgency": "LOW | MEDIUM | HIGH",
+  "confidence": 0.0,
+  "reply_draft": "text"
+}
 
 Rules:
-- If spam/marketing: SPAM_OTHER.
-- Do not invent policies.
-- If details are missing, ask ONE clarifying question.
-- Output JSON only. No extra text.
-Categories:
-CANCELLATION, FREEZE_REQUEST, BOOKING_CHANGE, BILLING_INVOICE, COMPLAINT, GENERAL_QUESTION, SPAM_OTHER
-`.trim();
+- Choose ONE category.
+- Use SPAM_OTHER for marketing.
+- Confidence is between 0 and 1.
+- Reply must be polite and short.
 
-  const user = `
+EMAIL:
 From: ${email.fromEmail}
 Subject: ${email.subject}
 Body:
-${email.bodyText || email.snippet || ""}
+${email.bodyText || email.snippet}
 `.trim();
 
-  const resp = await openai.responses.create({
-    model,
-    input: [
-      { role: "system", content: system },
-      { role: "user", content: user }
-    ]
+  const res = await fetch("http://localhost:11434/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "llama3",
+      prompt,
+      stream: false
+    })
   });
 
-  const text = (resp.output_text || "").trim();
+  const data = await res.json();
 
-  // Parse JSON safely even if model adds whitespace
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    // Try to extract JSON object if extra content appears
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    if (start === -1 || end === -1) throw new Error("AI did not return JSON.");
-    json = JSON.parse(text.slice(start, end + 1));
+  // Ollama returns raw text → extract JSON
+  const text = data.response;
+
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1) {
+    throw new Error("Ollama did not return JSON");
   }
 
-  const parsed = TriageSchema.safeParse(json);
-  if (!parsed.success) {
-    throw new Error("AI output failed schema validation: " + parsed.error.message);
-  }
-
-  return parsed.data;
+  return JSON.parse(text.slice(start, end + 1));
 }
