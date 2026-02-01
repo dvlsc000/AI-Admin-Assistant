@@ -1,7 +1,7 @@
 import { google } from "googleapis";
 
 /**
- * Build OAuth2 client and attach tokens.
+ * Create OAuth2 client and attach tokens for Gmail API calls.
  */
 export function makeOAuthClient({ clientId, clientSecret, redirectUri, tokens }) {
   const oauth2 = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
@@ -10,7 +10,8 @@ export function makeOAuthClient({ clientId, clientSecret, redirectUri, tokens })
 }
 
 /**
- * Fetch latest N inbox emails and return simplified objects.
+ * Fetch latest N inbox emails.
+ * Returns simplified objects containing headers + snippet + extracted body text.
  */
 export async function fetchLatestEmails({ oauth2Client, maxResults = 10 }) {
   const gmail = google.gmail({ version: "v1", auth: oauth2Client });
@@ -40,8 +41,8 @@ export async function fetchLatestEmails({ oauth2Client, maxResults = 10 }) {
     const subject = getHeader("Subject");
     const from = getHeader("From");
     const date = getHeader("Date");
-    const snippet = full.data.snippet || "";
 
+    const snippet = full.data.snippet || "";
     const bodyText = extractBodyText(payload);
 
     results.push({

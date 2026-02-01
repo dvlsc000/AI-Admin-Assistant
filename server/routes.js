@@ -7,7 +7,7 @@ import { triageEmail } from "./ai.js";
  * users/{userId}
  * users/{userId}/emails/{gmailId}
  */
-export function makeRoutes({ firestore, openai, env }) {
+export function makeRoutes({ firestore, env }) {
   const router = express.Router();
 
   const requireAuth = (req, res, next) => {
@@ -22,10 +22,10 @@ export function makeRoutes({ firestore, openai, env }) {
   });
 
   /**
-   * Sync emails:
-   * - fetch latest inbox emails
-   * - store each email if new
-   * - if AI result missing, generate and store
+   * Sync:
+   * 1) Fetch latest Gmail inbox emails (readonly)
+   * 2) Store in Firestore
+   * 3) If AI result missing -> call Ollama -> store result
    */
   router.post("/emails/sync", requireAuth, async (req, res) => {
     try {
@@ -66,14 +66,15 @@ export function makeRoutes({ firestore, openai, env }) {
 
         if (!data.ai) {
           const triage = await triageEmail({
-            openai,
-            model: env.OPENAI_MODEL,
-            email: e
+            email: e,
+            ollamaBaseUrl: env.OLLAMA_BASE_URL,
+            model: env.OLLAMA_MODEL
           });
 
           await docRef.update({
             ai: { ...triage, createdAt: Date.now() }
           });
+
           triaged++;
         }
       }
@@ -90,14 +91,12 @@ export function makeRoutes({ firestore, openai, env }) {
    */
   router.get("/emails", requireAuth, async (req, res) => {
     const user = req.user;
-
     const emailsRef = firestore.collection("users").doc(user.id).collection("emails");
 
-    // If dateIso is null for some emails, orderBy might fail.
-    // We'll order by createdAt (we always set it) to keep it reliable.
+    // Reliable ordering: createdAt is always set
     const snap = await emailsRef.orderBy("createdAt", "desc").limit(50).get();
-
     const emails = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
     res.json({ emails });
   });
 

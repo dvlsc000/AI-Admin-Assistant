@@ -2,14 +2,12 @@ import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 
 /**
- * Configures Passport Google OAuth.
- * Stores user + tokens in Firestore.
+ * Passport Google OAuth + Firestore user storage.
+ * Stores access/refresh tokens so server can call Gmail API later.
  */
 export function configureAuth({ firestore, google }) {
-  // Store Firestore user doc id in the session cookie
   passport.serializeUser((user, done) => done(null, user.id));
 
-  // Load user doc from Firestore on each request
   passport.deserializeUser(async (id, done) => {
     try {
       const snap = await firestore.collection("users").doc(id).get();
@@ -33,17 +31,14 @@ export function configureAuth({ firestore, google }) {
           const email = profile.emails?.[0]?.value || null;
           const displayName = profile.displayName || null;
 
-          // Token expiry timestamp (ms)
           const tokenExpiry = params.expires_in
             ? Date.now() + params.expires_in * 1000
             : null;
 
-          // Find existing user by googleId
           const usersRef = firestore.collection("users");
           const q = await usersRef.where("googleId", "==", googleId).limit(1).get();
 
           if (q.empty) {
-            // Create new user doc
             const docRef = await usersRef.add({
               googleId,
               email,
@@ -57,7 +52,6 @@ export function configureAuth({ firestore, google }) {
             return done(null, { id: docRef.id, googleId, email, displayName });
           }
 
-          // Update existing user doc
           const doc = q.docs[0];
           const existing = doc.data();
 
@@ -65,7 +59,7 @@ export function configureAuth({ firestore, google }) {
             email,
             displayName,
             accessToken,
-            // Google might only return refreshToken the first time.
+            // refreshToken might only be provided on first consent
             refreshToken: refreshToken || existing.refreshToken || null,
             tokenExpiry,
             updatedAt: Date.now()
