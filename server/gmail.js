@@ -1,24 +1,24 @@
 import { google } from "googleapis";
 
 /**
- * Create OAuth2 client and attach tokens for Gmail API calls.
+ * Create OAuth2 client and attach tokens.
  */
 export function makeOAuthClient({ clientId, clientSecret, redirectUri, tokens }) {
   const oauth2 = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-  oauth2.setCredentials(tokens); // { access_token, refresh_token }
+  oauth2.setCredentials(tokens);
   return oauth2;
 }
 
 /**
- * Fetch latest N inbox emails.
- * Returns simplified objects containing headers + snippet + extracted body text.
+ * Fetch latest emails by labelIds.
+ * For unread emails, pass labelIds: ["INBOX", "UNREAD"]
  */
-export async function fetchLatestEmails({ oauth2Client, maxResults = 10 }) {
+export async function fetchLatestEmails({ oauth2Client, maxResults = 20, labelIds = ["INBOX"] }) {
   const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
   const listRes = await gmail.users.messages.list({
     userId: "me",
-    labelIds: ["INBOX"],
+    labelIds,
     maxResults
   });
 
@@ -45,6 +45,9 @@ export async function fetchLatestEmails({ oauth2Client, maxResults = 10 }) {
     const snippet = full.data.snippet || "";
     const bodyText = extractBodyText(payload);
 
+    const msgLabelIds = full.data.labelIds || [];
+    const isUnread = msgLabelIds.includes("UNREAD");
+
     results.push({
       gmailId: full.data.id,
       threadId: full.data.threadId || null,
@@ -52,16 +55,15 @@ export async function fetchLatestEmails({ oauth2Client, maxResults = 10 }) {
       subject,
       dateIso: date ? new Date(date).toISOString() : null,
       snippet,
-      bodyText
+      bodyText,
+      labelIds: msgLabelIds,
+      isUnread
     });
   }
 
   return results;
 }
 
-/**
- * Extract plain text from Gmail MIME payload.
- */
 function extractBodyText(payload) {
   if (!payload) return "";
 
