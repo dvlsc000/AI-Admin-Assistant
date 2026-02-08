@@ -2,11 +2,6 @@ import express from "express";
 import { makeOAuthClient, fetchLatestEmails } from "./gmail.js";
 import { triageEmail } from "./ai.js";
 
-/**
- * Firestore layout:
- * users/{userId}
- * users/{userId}/emails/{gmailId}
- */
 export function makeRoutes({ firestore, env }) {
   const router = express.Router();
 
@@ -22,20 +17,14 @@ export function makeRoutes({ firestore, env }) {
   });
 
   /**
-   * Sync:
-   * - Fetch latest Gmail inbox messages
-   * - Store them in Firestore
-   * - If AI missing, call Ollama and store result
-   *
-   * IMPORTANT: For reliability during development, default maxResults to 1.
-   * You can change to 5/10 once everything is stable.
+   * Sync ONLY unread emails from Gmail:
+   * labelIds: INBOX + UNREAD
    */
   router.post("/emails/sync", requireAuth, async (req, res) => {
     const startedAt = Date.now();
 
     try {
       const user = req.user;
-      console.log("SYNC START ✅ user:", user.email);
 
       const oauth2Client = makeOAuthClient({
         clientId: env.GOOGLE_CLIENT_ID,
@@ -47,12 +36,14 @@ export function makeRoutes({ firestore, env }) {
         }
       });
 
-      // Keep it fast while debugging. Change to 5 or 10 later.
-      const MAX_RESULTS = 1;
+      // Increase this later if you want (20/50)
+      const MAX_RESULTS = 20;
 
-      console.log("Fetching emails from Gmail… maxResults =", MAX_RESULTS);
-      const emails = await fetchLatestEmails({ oauth2Client, maxResults: MAX_RESULTS });
-      console.log("Fetched from Gmail ✅ count:", emails.length);
+      const emails = await fetchLatestEmails({
+        oauth2Client,
+        maxResults: MAX_RESULTS,
+        labelIds: ["INBOX", "UNREAD"]
+      });
 
       const emailsRef = firestore.collection("users").doc(user.id).collection("emails");
 
@@ -60,8 +51,6 @@ export function makeRoutes({ firestore, env }) {
       let triaged = 0;
 
       for (const e of emails) {
-        console.log("Processing email:", e.subject || "(no subject)", "|", e.gmailId);
-
         const docRef = emailsRef.doc(e.gmailId);
         const snap = await docRef.get();
 
@@ -72,14 +61,20 @@ export function makeRoutes({ firestore, env }) {
             ai: null
           });
           created++;
-          console.log("Saved new email ✅");
+        } else {
+          // Update unread flag/labels in case it changed
+          await docRef.update({
+            isUnread: e.isUnread,
+            labelIds: e.labelIds,
+            updatedAt: Date.now()
+          });
         }
 
         const after = await docRef.get();
         const data = after.data();
 
+        // Only triage if AI missing
         if (!data.ai) {
-          console.log("Calling Ollama…");
           const triage = await triageEmail({
             email: e,
             ollamaBaseUrl: env.OLLAMA_BASE_URL,
@@ -87,21 +82,16 @@ export function makeRoutes({ firestore, env }) {
             timeoutMs: 60000,
             maxChars: 1500
           });
-          console.log("Ollama done ✅", triage.category, triage.urgency);
 
           await docRef.update({
             ai: { ...triage, createdAt: Date.now() }
           });
 
           triaged++;
-          console.log("Saved AI result ✅");
-        } else {
-          console.log("AI already exists — skipping ✅");
         }
       }
 
       const ms = Date.now() - startedAt;
-      console.log(`SYNC DONE ✅ in ${ms}ms`);
 
       res.json({
         ok: true,
@@ -112,31 +102,33 @@ export function makeRoutes({ firestore, env }) {
       });
     } catch (err) {
       console.error("SYNC ERROR ❌", err);
-
-      // Return a clear message to the frontend
-      res.status(500).json({
-        error: "Sync failed",
-        details: err.message || String(err)
-      });
+      res.status(500).json({ error: "Sync failed", details: err.message || String(err) });
     }
   });
 
   /**
-   * List latest emails (latest 50)
+   * List emails.
+   * Default: return ONLY unread emails.
+   * You can also call /api/emails?unread=false to show all.
    */
   router.get("/emails", requireAuth, async (req, res) => {
     const user = req.user;
+    const unreadOnly = req.query.unread !== "false"; // default true
+
     const emailsRef = firestore.collection("users").doc(user.id).collection("emails");
 
-    const snap = await emailsRef.orderBy("createdAt", "desc").limit(50).get();
+    let query = emailsRef.orderBy("createdAt", "desc").limit(50);
+
+    if (unreadOnly) {
+      query = emailsRef.where("isUnread", "==", true).orderBy("createdAt", "desc").limit(50);
+    }
+
+    const snap = await query.get();
     const emails = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     res.json({ emails });
   });
 
-  /**
-   * Get one email by gmailId
-   */
   router.get("/emails/:gmailId", requireAuth, async (req, res) => {
     const user = req.user;
     const gmailId = req.params.gmailId;
