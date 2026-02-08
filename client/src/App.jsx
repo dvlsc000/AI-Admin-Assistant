@@ -54,18 +54,23 @@ export default function App() {
   }
 
   async function syncInbox() {
-    setLoading(true);
-    setStatus("Syncing inbox + generating drafts…");
-    try {
-      const data = await apiFetch("/api/emails/sync", { method: "POST" });
-      setStatus(`Done. Fetched: ${data.fetched}, created: ${data.created}, triaged: ${data.triaged}`);
-      await refreshEmails();
-    } catch (e) {
-      setStatus(`Error: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
+  console.log("SYNC CLICKED ✅");               
+  alert("Sync clicked ✅");                 
+  setLoading(true);
+  setStatus("Syncing inbox + generating drafts…");
+
+  try {
+    const data = await apiFetch("/api/emails/sync", { method: "POST" });
+    console.log("SYNC RESPONSE ✅", data);
+    setStatus(`Done. Fetched: ${data.fetched}, created: ${data.created}, triaged: ${data.triaged}`);
+    await refreshEmails();
+  } catch (e) {
+    console.error("SYNC ERROR ❌", e);
+    setStatus(`Error: ${e.message}`);
+  } finally {
+    setLoading(false);
   }
+}
 
   async function logout() {
     setLoading(true);
