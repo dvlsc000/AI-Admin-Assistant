@@ -1,0 +1,97 @@
+:root {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #0b0b0f;
+  color: #eaeaf2;
+}
+
+a { color: inherit; text-decoration: none; }
+
+button {
+  cursor: pointer;
+  border: 1px solid #2a2a35;
+  background: #151521;
+  color: #eaeaf2;
+  padding: 10px 12px;
+  border-radius: 10px;
+}
+
+button:hover { background: #1b1b2a; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.container {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 420px 1fr;
+}
+
+.sidebar {
+  border-right: 1px solid #20202a;
+  padding: 16px;
+  overflow: auto;
+  background: #0d0d14;
+}
+
+.main {
+  padding: 16px;
+  overflow: auto;
+}
+
+.card {
+  border: 1px solid #20202a;
+  background: #11111b;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.small {
+  font-size: 12px;
+  color: #b7b7c8;
+}
+
+.badge {
+  border: 1px solid #2a2a35;
+  background: #0f0f18;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.listItem {
+  text-align: left;
+  width: 100%;
+  border: 1px solid #20202a;
+  background: #101019;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.listItem:hover { background: #141421; }
+
+pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  background: #0f0f18;
+  border: 1px solid #20202a;
+  padding: 12px;
+  border-radius: 14px;
+  color: #eaeaf2;
+}
