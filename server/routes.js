@@ -23,13 +23,19 @@ export function makeRoutes({ firestore, env }) {
 
   /**
    * Sync:
-   * 1) Fetch latest Gmail inbox emails (readonly)
-   * 2) Store in Firestore
-   * 3) If AI result missing -> call Ollama -> store result
+   * - Fetch latest Gmail inbox messages
+   * - Store them in Firestore
+   * - If AI missing, call Ollama and store result
+   *
+   * IMPORTANT: For reliability during development, default maxResults to 1.
+   * You can change to 5/10 once everything is stable.
    */
   router.post("/emails/sync", requireAuth, async (req, res) => {
+    const startedAt = Date.now();
+
     try {
       const user = req.user;
+      console.log("SYNC START ✅ user:", user.email);
 
       const oauth2Client = makeOAuthClient({
         clientId: env.GOOGLE_CLIENT_ID,
@@ -41,7 +47,12 @@ export function makeRoutes({ firestore, env }) {
         }
       });
 
-      const emails = await fetchLatestEmails({ oauth2Client, maxResults: 10 });
+      // Keep it fast while debugging. Change to 5 or 10 later.
+      const MAX_RESULTS = 1;
+
+      console.log("Fetching emails from Gmail… maxResults =", MAX_RESULTS);
+      const emails = await fetchLatestEmails({ oauth2Client, maxResults: MAX_RESULTS });
+      console.log("Fetched from Gmail ✅ count:", emails.length);
 
       const emailsRef = firestore.collection("users").doc(user.id).collection("emails");
 
@@ -49,6 +60,8 @@ export function makeRoutes({ firestore, env }) {
       let triaged = 0;
 
       for (const e of emails) {
+        console.log("Processing email:", e.subject || "(no subject)", "|", e.gmailId);
+
         const docRef = emailsRef.doc(e.gmailId);
         const snap = await docRef.get();
 
@@ -59,41 +72,62 @@ export function makeRoutes({ firestore, env }) {
             ai: null
           });
           created++;
+          console.log("Saved new email ✅");
         }
 
         const after = await docRef.get();
         const data = after.data();
 
         if (!data.ai) {
+          console.log("Calling Ollama…");
           const triage = await triageEmail({
             email: e,
             ollamaBaseUrl: env.OLLAMA_BASE_URL,
-            model: env.OLLAMA_MODEL
+            model: env.OLLAMA_MODEL,
+            timeoutMs: 60000,
+            maxChars: 1500
           });
+          console.log("Ollama done ✅", triage.category, triage.urgency);
 
           await docRef.update({
             ai: { ...triage, createdAt: Date.now() }
           });
 
           triaged++;
+          console.log("Saved AI result ✅");
+        } else {
+          console.log("AI already exists — skipping ✅");
         }
       }
 
-      res.json({ ok: true, fetched: emails.length, created, triaged });
+      const ms = Date.now() - startedAt;
+      console.log(`SYNC DONE ✅ in ${ms}ms`);
+
+      res.json({
+        ok: true,
+        fetched: emails.length,
+        created,
+        triaged,
+        durationMs: ms
+      });
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Sync failed", details: err.message });
+      console.error("SYNC ERROR ❌", err);
+
+      // Return a clear message to the frontend
+      res.status(500).json({
+        error: "Sync failed",
+        details: err.message || String(err)
+      });
     }
   });
 
   /**
-   * List latest 50 emails
+   * List latest emails (latest 50)
    */
   router.get("/emails", requireAuth, async (req, res) => {
     const user = req.user;
     const emailsRef = firestore.collection("users").doc(user.id).collection("emails");
 
-    // Reliable ordering: createdAt is always set
     const snap = await emailsRef.orderBy("createdAt", "desc").limit(50).get();
     const emails = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
