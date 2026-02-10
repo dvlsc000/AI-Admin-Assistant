@@ -1,10 +1,6 @@
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 
-/**
- * Passport Google OAuth + Firestore user storage.
- * Stores access/refresh tokens so server can call Gmail API later.
- */
 export function configureAuth({ firestore, google }) {
   passport.serializeUser((user, done) => done(null, user.id));
 
@@ -31,9 +27,7 @@ export function configureAuth({ firestore, google }) {
           const email = profile.emails?.[0]?.value || null;
           const displayName = profile.displayName || null;
 
-          const tokenExpiry = params.expires_in
-            ? Date.now() + params.expires_in * 1000
-            : null;
+          const tokenExpiry = params.expires_in ? Date.now() + params.expires_in * 1000 : null;
 
           const usersRef = firestore.collection("users");
           const q = await usersRef.where("googleId", "==", googleId).limit(1).get();
@@ -59,7 +53,6 @@ export function configureAuth({ firestore, google }) {
             email,
             displayName,
             accessToken,
-            // refreshToken might only be provided on first consent
             refreshToken: refreshToken || existing.refreshToken || null,
             tokenExpiry,
             updatedAt: Date.now()

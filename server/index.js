@@ -45,6 +45,9 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: "lax"
+      // If you deploy with HTTPS on a different domain, use:
+      // sameSite: "none",
+      // secure: true
     }
   })
 );
@@ -69,11 +72,7 @@ app.use(passport.session());
 app.get(
   "/auth/google",
   passport.authenticate("google", {
-    scope: [
-      "profile",
-      "email",
-      "https://www.googleapis.com/auth/gmail.readonly"
-    ],
+    scope: ["profile", "email", "https://www.googleapis.com/auth/gmail.readonly"],
     accessType: "offline",
     prompt: "consent"
   })
@@ -84,55 +83,22 @@ app.get(
   "/auth/google/callback",
   passport.authenticate("google", { failureRedirect: "/" }),
   (req, res) => {
-    // Server-only: go back to home
-    res.redirect("/");
+    // IMPORTANT: send user back to the frontend
+    res.redirect(env.CLIENT_URL);
   }
 );
 
 // API
 app.use("/api", makeRoutes({ firestore, env }));
 
-/**
- * Simple server-only UI (no frontend needed)
- */
 app.get("/", (req, res) => {
-  const user = req.user;
-
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-
-  if (!user) {
-    return res.end(`
-      <h2>AI Admin Assistant (Server Only)</h2>
-      <p>Status: <b>Not logged in</b></p>
-      <p><a href="/auth/google">Login with Google</a></p>
-      <hr/>
-      <p>After login, click Sync to fetch emails + generate drafts with <b>Ollama</b>.</p>
-    `);
-  }
-
-  return res.end(`
-    <h2>AI Admin Assistant (Server Only)</h2>
-    <p>Status: <b>Logged in</b></p>
-    <p>User: ${user.email || "(no email)"} </p>
-
-    <hr/>
-
-    <form action="/api/emails/sync" method="post">
-      <button type="submit">Sync Inbox + Generate Drafts (Ollama)</button>
-    </form>
-
-    <p style="margin-top:10px;">
-      View emails JSON: <a href="/api/emails">/api/emails</a>
-    </p>
-
-    <form action="/api/logout" method="post" style="margin-top:16px;">
-      <button type="submit">Logout</button>
-    </form>
-  `);
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.end("Backend is running. Go to your frontend to use the app.");
 });
 
 app.listen(Number(env.PORT), () => {
   console.log(`Server running: http://localhost:${env.PORT}`);
+  console.log(`Frontend:       ${env.CLIENT_URL}`);
   console.log(`Login:          http://localhost:${env.PORT}/auth/google`);
   console.log(`Ollama:         ${env.OLLAMA_BASE_URL} (model: ${env.OLLAMA_MODEL})`);
 });

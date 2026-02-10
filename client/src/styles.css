@@ -1,97 +1,97 @@
 :root {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+    "Segoe UI Emoji";
+  line-height: 1.35;
 }
 
 body {
   margin: 0;
-  background: #0b0b0f;
-  color: #eaeaf2;
+  background: #0b0f17;
+  color: #e6e9ef;
 }
-
-a { color: inherit; text-decoration: none; }
 
 button {
-  cursor: pointer;
-  border: 1px solid #2a2a35;
-  background: #151521;
-  color: #eaeaf2;
+  border: 0;
   padding: 10px 12px;
   border-radius: 10px;
+  background: #1d2a44;
+  color: #e6e9ef;
+  cursor: pointer;
+  font-weight: 700;
 }
 
-button:hover { background: #1b1b2a; }
-button:disabled { opacity: 0.55; cursor: not-allowed; }
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 .container {
-  height: 100vh;
   display: grid;
-  grid-template-columns: 420px 1fr;
+  grid-template-columns: 360px 1fr;
+  min-height: 100vh;
 }
 
 .sidebar {
-  border-right: 1px solid #20202a;
-  padding: 16px;
-  overflow: auto;
-  background: #0d0d14;
+  padding: 18px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .main {
-  padding: 16px;
-  overflow: auto;
+  padding: 18px;
 }
 
 .card {
-  border: 1px solid #20202a;
-  background: #11111b;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
-  padding: 12px;
+  padding: 14px;
 }
 
 .row {
   display: flex;
-  gap: 10px;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
 .small {
-  font-size: 12px;
-  color: #b7b7c8;
-}
-
-.badge {
-  border: 1px solid #2a2a35;
-  background: #0f0f18;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  white-space: nowrap;
+  opacity: 0.85;
+  font-size: 0.92rem;
 }
 
 .list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin-top: 12px;
 }
 
 .listItem {
   text-align: left;
   width: 100%;
-  border: 1px solid #20202a;
-  background: #101019;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
   border-radius: 14px;
   padding: 12px;
 }
 
-.listItem:hover { background: #141421; }
+.listItem:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
 
 pre {
   white-space: pre-wrap;
-  word-wrap: break-word;
-  background: #0f0f18;
-  border: 1px solid #20202a;
+  word-break: break-word;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 12px;
-  border-radius: 14px;
-  color: #eaeaf2;
+  border-radius: 12px;
 }

@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch, apiBase } from "./api";
 
 /**
- * Expects server routes:
+ * Server routes:
  * - GET  /api/me
  * - POST /api/emails/sync
- * - GET  /api/emails
+ * - GET  /api/emails?unread=true|false
  * - GET  /api/emails/:gmailId
  * - POST /api/logout
  * - GET  /auth/google
@@ -23,9 +23,9 @@ function percent(x) {
 export default function App() {
   const API = apiBase();
 
-  const [me, setMe] = useState(null);           // {user:null} or {user:{...}}
-  const [emails, setEmails] = useState([]);     // list items
-  const [selected, setSelected] = useState(null); // full email doc
+  const [me, setMe] = useState(null);
+  const [emails, setEmails] = useState([]);
+  const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -35,7 +35,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await apiFetch("/api/me");
+        const data = await apiFetch("/api/me", { timeoutMs: 15000 });
         setMe(data);
       } catch {
         setMe({ user: null });
@@ -44,38 +44,44 @@ export default function App() {
   }, []);
 
   async function refreshEmails() {
-    const data = await apiFetch("/api/emails");
+    const data = await apiFetch("/api/emails?unread=true", { timeoutMs: 30000 });
     setEmails(data.emails || []);
   }
 
   async function openEmail(gmailId) {
-    const data = await apiFetch(`/api/emails/${gmailId}`);
-    setSelected(data.email);
+    const data = await apiFetch(`/api/emails/${gmailId}`, { timeoutMs: 30000 });
+    setSelected(data.email || null);
   }
 
   async function syncInbox() {
-  console.log("SYNC CLICKED ✅");               
-  alert("Sync clicked ✅");                 
-  setLoading(true);
-  setStatus("Syncing inbox + generating drafts…");
+    setLoading(true);
+    setStatus("Syncing unread inbox + generating drafts…");
 
-  try {
-    const data = await apiFetch("/api/emails/sync", { method: "POST" });
-    console.log("SYNC RESPONSE ✅", data);
-    setStatus(`Done. Fetched: ${data.fetched}, created: ${data.created}, triaged: ${data.triaged}`);
-    await refreshEmails();
-  } catch (e) {
-    console.error("SYNC ERROR ❌", e);
-    setStatus(`Error: ${e.message}`);
-  } finally {
-    setLoading(false);
+    try {
+      const data = await apiFetch("/api/emails/sync", {
+        method: "POST",
+        body: JSON.stringify({ maxResults: 20 }),
+        timeoutMs: 180000 // 3 minutes for sync endpoint (adjust if your Ollama is slower)
+      });
+
+      setStatus(
+        `Done. Fetched: ${data.fetched}, created: ${data.created}, triaged: ${data.triaged} (${Math.round(
+          (data.durationMs || 0) / 1000
+        )}s)`
+      );
+
+      await refreshEmails();
+    } catch (e) {
+      setStatus(`Error: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   async function logout() {
     setLoading(true);
     try {
-      await apiFetch("/api/logout", { method: "POST" });
+      await apiFetch("/api/logout", { method: "POST", timeoutMs: 15000 });
       setMe({ user: null });
       setEmails([]);
       setSelected(null);
@@ -92,10 +98,8 @@ export default function App() {
     if (authed) refreshEmails();
   }, [authed]);
 
-  // Loading
   if (!me) return <div style={{ padding: 24 }}>Loading…</div>;
 
-  // Logged out screen
   if (!authed) {
     return (
       <div style={{ padding: 24, maxWidth: 720 }}>
@@ -119,12 +123,12 @@ export default function App() {
         <div style={{ marginTop: 14 }} className="small">
           If you login but come back still logged out, check your server .env:
           <pre style={{ marginTop: 8 }}>CLIENT_URL=http://localhost:5173</pre>
+          <pre style={{ marginTop: 8 }}>VITE_API_URL=http://localhost:3001</pre>
         </div>
       </div>
     );
   }
 
-  // Logged in app
   return (
     <div className="container">
       {/* Sidebar */}
@@ -136,17 +140,25 @@ export default function App() {
               <div style={{ fontWeight: 900 }}>{me.user.email}</div>
               <div className="small">{me.user.displayName || ""}</div>
             </div>
-            <button onClick={logout} disabled={loading}>Logout</button>
+            <button onClick={logout} disabled={loading}>
+              Logout
+            </button>
           </div>
 
           <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
             <button onClick={syncInbox} disabled={loading}>
               {loading ? "Working…" : "Sync + Draft"}
             </button>
-            <button onClick={refreshEmails} disabled={loading}>Refresh</button>
+            <button onClick={refreshEmails} disabled={loading}>
+              Refresh
+            </button>
           </div>
 
-          {status && <div style={{ marginTop: 10 }} className="small">{status}</div>}
+          {status && (
+            <div style={{ marginTop: 10 }} className="small">
+              {status}
+            </div>
+          )}
         </div>
 
         <h3 style={{ marginTop: 16, marginBottom: 8 }}>Inbox</h3>
@@ -156,28 +168,29 @@ export default function App() {
             <div className="small">No emails yet. Click “Sync + Draft”.</div>
           ) : (
             emails.map((e) => (
-              <button
-                className="listItem"
-                key={e.gmailId}
-                onClick={() => openEmail(e.gmailId)}
-              >
+              <button className="listItem" key={e.gmailId} onClick={() => openEmail(e.gmailId)}>
                 <div className="row" style={{ alignItems: "flex-start" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontWeight: 900,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap"
-                    }}>
+                    <div
+                      style={{
+                        fontWeight: 900,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap"
+                      }}
+                    >
                       {e.subject || "(no subject)"}
                     </div>
 
-                    <div className="small" style={{
-                      marginTop: 4,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap"
-                    }}>
+                    <div
+                      className="small"
+                      style={{
+                        marginTop: 4,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap"
+                      }}
+                    >
                       {e.fromEmail}
                     </div>
                   </div>
@@ -188,12 +201,15 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="small" style={{
-                  marginTop: 8,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap"
-                }}>
+                <div
+                  className="small"
+                  style={{
+                    marginTop: 8,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }}
+                >
                   {e.snippet || ""}
                 </div>
 
@@ -219,19 +235,19 @@ export default function App() {
           <div className="card">
             <div className="row" style={{ alignItems: "flex-start" }}>
               <div style={{ flex: 1 }}>
-                <h2 style={{ marginTop: 0, marginBottom: 6 }}>
-                  {selected.subject || "(no subject)"}
-                </h2>
-                <div className="small"><b>From:</b> {selected.fromEmail}</div>
-                <div className="small"><b>Date:</b> {selected.dateIso || "(unknown)"}</div>
+                <h2 style={{ marginTop: 0, marginBottom: 6 }}>{selected.subject || "(no subject)"}</h2>
+                <div className="small">
+                  <b>From:</b> {selected.fromEmail}
+                </div>
+                <div className="small">
+                  <b>Date:</b> {selected.dateIso || "(unknown)"}
+                </div>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
                 {selected.ai?.category && <Badge>{selected.ai.category}</Badge>}
                 {selected.ai?.urgency && <Badge>Urgency: {selected.ai.urgency}</Badge>}
-                {typeof selected.ai?.confidence === "number" && (
-                  <Badge>Conf: {percent(selected.ai.confidence)}</Badge>
-                )}
+                {typeof selected.ai?.confidence === "number" && <Badge>Conf: {percent(selected.ai.confidence)}</Badge>}
               </div>
             </div>
 

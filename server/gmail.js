@@ -1,18 +1,11 @@
 import { google } from "googleapis";
 
-/**
- * Create OAuth2 client and attach tokens.
- */
 export function makeOAuthClient({ clientId, clientSecret, redirectUri, tokens }) {
   const oauth2 = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   oauth2.setCredentials(tokens);
   return oauth2;
 }
 
-/**
- * Fetch latest emails by labelIds.
- * For unread emails, pass labelIds: ["INBOX", "UNREAD"]
- */
 export async function fetchLatestEmails({ oauth2Client, maxResults = 20, labelIds = ["INBOX"] }) {
   const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
