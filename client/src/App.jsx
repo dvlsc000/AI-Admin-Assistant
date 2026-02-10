@@ -1,16 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch, apiBase } from "./api";
 
-/**
- * Server routes:
- * - GET  /api/me
- * - POST /api/emails/sync
- * - GET  /api/emails?unread=true|false
- * - GET  /api/emails/:gmailId
- * - POST /api/logout
- * - GET  /auth/google
- */
-
 function Badge({ children }) {
   return <span className="badge">{children}</span>;
 }
@@ -29,9 +19,10 @@ export default function App() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [health, setHealth] = useState({ ok: false, ollamaOk: null, model: null });
+
   const authed = useMemo(() => !!me?.user, [me]);
 
-  // On load: check login state
   useEffect(() => {
     (async () => {
       try {
@@ -42,6 +33,15 @@ export default function App() {
       }
     })();
   }, []);
+
+  async function refreshHealth() {
+    try {
+      const h = await apiFetch("/api/health", { timeoutMs: 5000 });
+      setHealth(h);
+    } catch {
+      setHealth({ ok: false, ollamaOk: false, model: null });
+    }
+  }
 
   async function refreshEmails() {
     const data = await apiFetch("/api/emails?unread=true", { timeoutMs: 30000 });
@@ -58,17 +58,18 @@ export default function App() {
     setStatus("Syncing unread inbox + generating drafts…");
 
     try {
+      await refreshHealth();
+
       const data = await apiFetch("/api/emails/sync", {
         method: "POST",
         body: JSON.stringify({ maxResults: 20 }),
-        timeoutMs: 180000 // 3 minutes for sync endpoint (adjust if your Ollama is slower)
+        timeoutMs: 180000
       });
 
-      setStatus(
-        `Done. Fetched: ${data.fetched}, created: ${data.created}, triaged: ${data.triaged} (${Math.round(
-          (data.durationMs || 0) / 1000
-        )}s)`
-      );
+      const secs = Math.round((data.durationMs || 0) / 1000);
+      const errNote = data.triageErrors ? ` (AI errors: ${data.triageErrors})` : "";
+
+      setStatus(`Done. Fetched: ${data.fetched}, created: ${data.created}, triaged: ${data.triaged}${errNote} (${secs}s)`);
 
       await refreshEmails();
     } catch (e) {
@@ -93,9 +94,11 @@ export default function App() {
     }
   }
 
-  // Load emails after login
   useEffect(() => {
-    if (authed) refreshEmails();
+    if (authed) {
+      refreshHealth();
+      refreshEmails();
+    }
   }, [authed]);
 
   if (!me) return <div style={{ padding: 24 }}>Loading…</div>;
@@ -119,19 +122,21 @@ export default function App() {
             </a>
           </div>
         </div>
-
-        <div style={{ marginTop: 14 }} className="small">
-          If you login but come back still logged out, check your server .env:
-          <pre style={{ marginTop: 8 }}>CLIENT_URL=http://localhost:5173</pre>
-          <pre style={{ marginTop: 8 }}>VITE_API_URL=http://localhost:3001</pre>
-        </div>
       </div>
     );
   }
 
+  const ollamaBadge =
+    health.ollamaOk == null ? (
+      <Badge>Ollama: ?</Badge>
+    ) : health.ollamaOk ? (
+      <Badge>Ollama: OK ({health.model})</Badge>
+    ) : (
+      <Badge>Ollama: DOWN</Badge>
+    );
+
   return (
     <div className="container">
-      {/* Sidebar */}
       <div className="sidebar">
         <div className="card">
           <div className="row">
@@ -142,6 +147,13 @@ export default function App() {
             </div>
             <button onClick={logout} disabled={loading}>
               Logout
+            </button>
+          </div>
+
+          <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {ollamaBadge}
+            <button onClick={refreshHealth} disabled={loading}>
+              Check health
             </button>
           </div>
 
@@ -171,26 +183,11 @@ export default function App() {
               <button className="listItem" key={e.gmailId} onClick={() => openEmail(e.gmailId)}>
                 <div className="row" style={{ alignItems: "flex-start" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontWeight: 900,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap"
-                      }}
-                    >
+                    <div style={{ fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {e.subject || "(no subject)"}
                     </div>
 
-                    <div
-                      className="small"
-                      style={{
-                        marginTop: 4,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap"
-                      }}
-                    >
+                    <div className="small" style={{ marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {e.fromEmail}
                     </div>
                   </div>
@@ -201,15 +198,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div
-                  className="small"
-                  style={{
-                    marginTop: 8,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap"
-                  }}
-                >
+                <div className="small" style={{ marginTop: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {e.snippet || ""}
                 </div>
 
@@ -224,7 +213,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Main panel */}
       <div className="main">
         {!selected ? (
           <div className="card">

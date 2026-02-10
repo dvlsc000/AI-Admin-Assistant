@@ -45,7 +45,7 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: "lax"
-      // If you deploy with HTTPS on a different domain, use:
+      // For cross-site + HTTPS:
       // sameSite: "none",
       // secure: true
     }
@@ -82,10 +82,7 @@ app.get(
 app.get(
   "/auth/google/callback",
   passport.authenticate("google", { failureRedirect: "/" }),
-  (req, res) => {
-    // IMPORTANT: send user back to the frontend
-    res.redirect(env.CLIENT_URL);
-  }
+  (req, res) => res.redirect(env.CLIENT_URL)
 );
 
 // API
@@ -94,6 +91,14 @@ app.use("/api", makeRoutes({ firestore, env }));
 app.get("/", (req, res) => {
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.end("Backend is running. Go to your frontend to use the app.");
+});
+
+// Process-level safety net (logs + prevents silent crashes)
+process.on("unhandledRejection", (err) => {
+  console.error("UNHANDLED REJECTION ❌", err);
+});
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION ❌", err);
 });
 
 app.listen(Number(env.PORT), () => {

@@ -6,6 +6,20 @@ function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
+async function checkOllamaQuick({ baseUrl, timeoutMs = 2000 }) {
+  const url = baseUrl.replace(/\/$/, "") + "/api/tags";
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export function makeRoutes({ firestore, env }) {
   const router = express.Router();
 
@@ -14,16 +28,21 @@ export function makeRoutes({ firestore, env }) {
     return res.status(401).json({ error: "Not authenticated. Login at /auth/google" });
   };
 
+  router.get("/health", asyncHandler(async (req, res) => {
+    const ollamaOk = await checkOllamaQuick({ baseUrl: env.OLLAMA_BASE_URL });
+    res.json({
+      ok: true,
+      ollamaOk,
+      model: env.OLLAMA_MODEL
+    });
+  }));
+
   router.get("/me", (req, res) => {
     if (!req.user) return res.json({ user: null });
     const { id, email, displayName } = req.user;
     res.json({ user: { id, email, displayName } });
   });
 
-  /**
-   * Sync ONLY unread emails:
-   * labelIds: INBOX + UNREAD
-   */
   router.post(
     "/emails/sync",
     requireAuth,
@@ -43,6 +62,14 @@ export function makeRoutes({ firestore, env }) {
         }
       });
 
+      const ollamaOk = await checkOllamaQuick({ baseUrl: env.OLLAMA_BASE_URL });
+      if (!ollamaOk) {
+        return res.status(503).json({
+          error: "Ollama not reachable",
+          details: `Cannot reach ${env.OLLAMA_BASE_URL}. Is Ollama running?`
+        });
+      }
+
       const emails = await fetchLatestEmails({
         oauth2Client,
         maxResults,
@@ -53,6 +80,7 @@ export function makeRoutes({ firestore, env }) {
 
       let created = 0;
       let triaged = 0;
+      let triageErrors = 0;
 
       for (const e of emails) {
         const docRef = emailsRef.doc(e.gmailId);
@@ -77,7 +105,6 @@ export function makeRoutes({ firestore, env }) {
         const data = after.data();
 
         if (!data.ai) {
-          // If Ollama fails for one email, don't brick the whole sync.
           try {
             const triage = await triageEmail({
               email: e,
@@ -93,6 +120,7 @@ export function makeRoutes({ firestore, env }) {
 
             triaged++;
           } catch (err) {
+            triageErrors++;
             await docRef.update({
               ai: {
                 category: "GENERAL_QUESTION",
@@ -114,17 +142,12 @@ export function makeRoutes({ firestore, env }) {
         fetched: emails.length,
         created,
         triaged,
+        triageErrors,
         durationMs: Date.now() - startedAt
       });
     })
   );
 
-  /**
-   * List emails.
-   * Default unreadOnly=true.
-   *
-   * NOTE: We avoid `where + orderBy` (composite index) by fetching and sorting in memory.
-   */
   router.get(
     "/emails",
     requireAuth,
@@ -142,17 +165,12 @@ export function makeRoutes({ firestore, env }) {
       }
 
       const emails = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      // Ensure stable order
       emails.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
       res.json({ emails });
     })
   );
 
-  /**
-   * Single email by Gmail ID
-   */
   router.get(
     "/emails/:gmailId",
     requireAuth,
@@ -175,7 +193,6 @@ export function makeRoutes({ firestore, env }) {
     });
   });
 
-  // Central error handler for this router
   router.use((err, req, res, next) => {
     console.error("API ERROR ❌", err);
     res.status(500).json({ error: "Server error", details: err?.message || String(err) });
