@@ -1,6 +1,6 @@
 import express from "express";
 import { makeOAuthClient, fetchLatestEmails } from "./gmail.js";
-import { triageEmail } from "./ai.js";
+import { triageEmail, summarizeEmail } from "./ai.js";
 
 function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -28,14 +28,13 @@ export function makeRoutes({ firestore, env }) {
     return res.status(401).json({ error: "Not authenticated. Login at /auth/google" });
   };
 
-  router.get("/health", asyncHandler(async (req, res) => {
-    const ollamaOk = await checkOllamaQuick({ baseUrl: env.OLLAMA_BASE_URL });
-    res.json({
-      ok: true,
-      ollamaOk,
-      model: env.OLLAMA_MODEL
-    });
-  }));
+  router.get(
+    "/health",
+    asyncHandler(async (req, res) => {
+      const ollamaOk = await checkOllamaQuick({ baseUrl: env.OLLAMA_BASE_URL });
+      res.json({ ok: true, ollamaOk, model: env.OLLAMA_MODEL });
+    })
+  );
 
   router.get("/me", (req, res) => {
     if (!req.user) return res.json({ user: null });
@@ -51,6 +50,7 @@ export function makeRoutes({ firestore, env }) {
       const user = req.user;
 
       const maxResults = Math.max(1, Math.min(Number(req.body?.maxResults ?? 20), 50));
+      const SUMMARY_THRESHOLD = 900; // chars: when to auto-summarize
 
       const oauth2Client = makeOAuthClient({
         clientId: env.GOOGLE_CLIENT_ID,
@@ -80,7 +80,8 @@ export function makeRoutes({ firestore, env }) {
 
       let created = 0;
       let triaged = 0;
-      let triageErrors = 0;
+      let summarized = 0;
+      let aiErrors = 0;
 
       for (const e of emails) {
         const docRef = emailsRef.doc(e.gmailId);
@@ -90,13 +91,18 @@ export function makeRoutes({ firestore, env }) {
           await docRef.set({
             ...e,
             createdAt: Date.now(),
-            ai: null
+            updatedAt: Date.now(),
+            ai: null,
+            aiSummary: null
           });
           created++;
         } else {
           await docRef.update({
             isUnread: e.isUnread,
             labelIds: e.labelIds,
+            // Keep latest cleaned text in case Gmail formatting changed
+            cleanBodyText: e.cleanBodyText,
+            snippet: e.snippet,
             updatedAt: Date.now()
           });
         }
@@ -104,6 +110,33 @@ export function makeRoutes({ firestore, env }) {
         const after = await docRef.get();
         const data = after.data();
 
+        // ✅ summary if long and not yet summarized
+        const msg = (e.cleanBodyText || e.bodyText || e.snippet || "").trim();
+        if (!data.aiSummary && msg.length > SUMMARY_THRESHOLD) {
+          try {
+            const sum = await summarizeEmail({
+              email: e,
+              ollamaBaseUrl: env.OLLAMA_BASE_URL,
+              model: env.OLLAMA_MODEL,
+              timeoutMs: 45000,
+              maxChars: 4000
+            });
+            await docRef.update({ aiSummary: { ...sum, createdAt: Date.now() } });
+            summarized++;
+          } catch (err) {
+            aiErrors++;
+            await docRef.update({
+              aiSummary: {
+                summary: "",
+                key_points: [],
+                error: String(err?.message || err),
+                createdAt: Date.now()
+              }
+            });
+          }
+        }
+
+        // ✅ triage only if missing
         if (!data.ai) {
           try {
             const triage = await triageEmail({
@@ -114,13 +147,10 @@ export function makeRoutes({ firestore, env }) {
               maxChars: 1500
             });
 
-            await docRef.update({
-              ai: { ...triage, createdAt: Date.now() }
-            });
-
+            await docRef.update({ ai: { ...triage, createdAt: Date.now() } });
             triaged++;
           } catch (err) {
-            triageErrors++;
+            aiErrors++;
             await docRef.update({
               ai: {
                 category: "GENERAL_QUESTION",
@@ -131,7 +161,6 @@ export function makeRoutes({ firestore, env }) {
                 createdAt: Date.now()
               }
             });
-
             triaged++;
           }
         }
@@ -142,7 +171,8 @@ export function makeRoutes({ firestore, env }) {
         fetched: emails.length,
         created,
         triaged,
-        triageErrors,
+        summarized,
+        aiErrors,
         durationMs: Date.now() - startedAt
       });
     })
@@ -153,7 +183,7 @@ export function makeRoutes({ firestore, env }) {
     requireAuth,
     asyncHandler(async (req, res) => {
       const user = req.user;
-      const unreadOnly = req.query.unread !== "false"; // default true
+      const unreadOnly = req.query.unread !== "false";
 
       const emailsRef = firestore.collection("users").doc(user.id).collection("emails");
 

@@ -239,8 +239,31 @@ export default function App() {
               </div>
             </div>
 
-            <h3 style={{ marginTop: 16 }}>Email body</h3>
-            <pre>{selected.bodyText || selected.snippet || ""}</pre>
+            <h3 style={{ marginTop: 16 }}>Message</h3>
+
+            {selected.aiSummary?.summary ? (
+              <div className="card" style={{ marginTop: 10 }}>
+                <div style={{ fontWeight: 900, marginBottom: 6 }}>Short summary</div>
+                <div className="small" style={{ whiteSpace: "pre-wrap" }}>
+                  {selected.aiSummary.summary}
+                </div>
+
+                {Array.isArray(selected.aiSummary.key_points) && selected.aiSummary.key_points.length > 0 && (
+                  <ul style={{ marginTop: 10, marginBottom: 0 }}>
+                    {selected.aiSummary.key_points.map((p, idx) => (
+                      <li key={idx} className="small">
+                        {p}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : null}
+
+            <pre style={{ marginTop: 10 }}>
+              {(selected.cleanBodyText || selected.bodyText || selected.snippet || "").trim()}
+            </pre>
+
 
             <h3 style={{ marginTop: 16 }}>AI draft reply</h3>
             <pre>{selected.ai?.reply_draft || "(No draft yet — click Sync + Draft)"}</pre>

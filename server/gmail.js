@@ -38,6 +38,9 @@ export async function fetchLatestEmails({ oauth2Client, maxResults = 20, labelId
     const snippet = full.data.snippet || "";
     const bodyText = extractBodyText(payload);
 
+    // ✅ NEW: clean the body so the UI and AI use the "pure message"
+    const cleanBodyText = cleanEmailBody(bodyText) || cleanEmailBody(snippet) || "";
+
     const msgLabelIds = full.data.labelIds || [];
     const isUnread = msgLabelIds.includes("UNREAD");
 
@@ -49,6 +52,7 @@ export async function fetchLatestEmails({ oauth2Client, maxResults = 20, labelId
       dateIso: date ? new Date(date).toISOString() : null,
       snippet,
       bodyText,
+      cleanBodyText, // ✅ store cleaned version
       labelIds: msgLabelIds,
       isUnread
     });
@@ -95,4 +99,50 @@ function decodeBase64Url(data) {
 
 function stripHtml(html) {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Best-effort "pure message" extraction:
+ * - removes common reply separators and quoted blocks
+ * - removes common signature separators
+ * - removes lines starting with ">"
+ */
+function cleanEmailBody(text) {
+  if (!text) return "";
+
+  let t = String(text).replace(/\r\n/g, "\n").trim();
+
+  // Remove lines that are pure quoted content
+  t = t
+    .split("\n")
+    .filter((line) => !line.trim().startsWith(">"))
+    .join("\n");
+
+  // Cut off at common reply markers
+  const replyMarkers = [
+    /^On .*wrote:$/im,
+    /^From:\s.*$/im,
+    /^Sent:\s.*$/im,
+    /^To:\s.*$/im,
+    /^Subject:\s.*$/im,
+    /^-+\s*Original Message\s*-+$/im,
+    /^_{2,}$/m,
+    /^-{2,}$/m
+  ];
+
+  let cutIdx = -1;
+  for (const re of replyMarkers) {
+    const m = re.exec(t);
+    if (m && (cutIdx === -1 || m.index < cutIdx)) cutIdx = m.index;
+  }
+  if (cutIdx !== -1) t = t.slice(0, cutIdx).trim();
+
+  // Cut off at signature separator: "-- "
+  const sig = t.indexOf("\n-- ");
+  if (sig !== -1) t = t.slice(0, sig).trim();
+
+  // Collapse excessive blank lines
+  t = t.replace(/\n{3,}/g, "\n\n").trim();
+
+  return t;
 }
