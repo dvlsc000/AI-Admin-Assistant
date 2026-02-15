@@ -217,6 +217,53 @@ export function makeRoutes({ firestore, env }) {
     })
   );
 
+  // Delete ONE email doc
+router.delete(
+  "/emails/:gmailId",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = req.user;
+    const { gmailId } = req.params;
+
+    const docRef = firestore.collection("users").doc(user.id).collection("emails").doc(gmailId);
+    const snap = await docRef.get();
+    if (!snap.exists) return res.status(404).json({ error: "Email not found" });
+
+    await docRef.delete();
+    res.json({ ok: true, deleted: gmailId });
+  })
+);
+
+// Delete ALL emails for this user (batched)
+router.delete(
+  "/emails",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = req.user;
+    const emailsRef = firestore.collection("users").doc(user.id).collection("emails");
+
+    const BATCH_SIZE = 400; // keep under Firestore 500 limit
+    let deleted = 0;
+
+    while (true) {
+      const snap = await emailsRef.limit(BATCH_SIZE).get();
+      if (snap.empty) break;
+
+      const batch = firestore.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+
+      deleted += snap.size;
+
+      // safety: if fewer than batch size, we're done
+      if (snap.size < BATCH_SIZE) break;
+    }
+
+    res.json({ ok: true, deleted });
+  })
+);
+
+
   router.post("/logout", (req, res) => {
     req.logout(() => {
       req.session.destroy(() => res.json({ ok: true }));
