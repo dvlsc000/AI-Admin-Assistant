@@ -36,6 +36,29 @@ export function makeRoutes({ firestore, env }) {
     })
   );
 
+  router.post(
+  "/ai/test",
+  asyncHandler(async (req, res) => {
+    const email = {
+      fromEmail: req.body?.fromEmail || "member@example.com",
+      subject: req.body?.subject || "Test email",
+      snippet: req.body?.message || "",
+      bodyText: req.body?.message || "",
+      cleanBodyText: req.body?.message || ""
+    };
+
+    const triage = await triageEmail({
+      email,
+      ollamaBaseUrl: env.OLLAMA_BASE_URL,
+      model: env.OLLAMA_MODEL,
+      timeoutMs: 60000,
+      maxChars: 2000
+    });
+
+    res.json({ ok: true, triage });
+  })
+);
+
   router.get("/me", (req, res) => {
     if (!req.user) return res.json({ user: null });
     const { id, email, displayName } = req.user;
