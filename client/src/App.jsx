@@ -10,6 +10,87 @@ function percent(x) {
   return `${Math.round(x * 100)}%`;
 }
 
+function cleanForDisplay(text) {
+  if (!text) return "";
+
+  let t = String(text);
+
+  // Remove CSS blocks often appearing in marketing emails
+  // (very common: "body { margin: 0; padding: 0; } ...")
+  t = t.replace(/(^|\n)\s*body\s*\{[\s\S]*?\}\s*(?=\n|$)/gi, "\n");
+  t = t.replace(/(^|\n)\s*@media\s*[\s\S]*?\}\s*(?=\n|$)/gi, "\n");
+
+  // Remove super long tracking links (example: t1.marketing.ryanair...)
+  // Keep normal links.
+  t = t
+    .split("\n")
+    .filter((line) => {
+      const s = line.trim();
+      if (!s) return true;
+
+      // Drop lines that are basically only a huge URL
+      const isMostlyUrl = /^https?:\/\/\S{60,}$/i.test(s);
+      if (isMostlyUrl) return false;
+
+      // Drop known tracker domains (adjust list as you see them)
+      if (/t1\.marketing\.ryanairmail\.com/i.test(s)) return false;
+
+      return true;
+    })
+    .join("\n");
+
+  // Collapse crazy whitespace
+  t = t.replace(/\n{3,}/g, "\n\n").trim();
+
+  return t;
+}
+
+function LinkifiedText({ text }) {
+  // basic linkify
+  const parts = text.split(/(https?:\/\/[^\s)]+)|(www\.[^\s)]+)/gi);
+
+  return (
+    <>
+      {parts.map((part, idx) => {
+        if (!part) return null;
+
+        const isUrl = /^https?:\/\//i.test(part) || /^www\./i.test(part);
+        if (!isUrl) return <span key={idx}>{part}</span>;
+
+        const href = part.startsWith("http") ? part : `https://${part}`;
+
+        // shorten displayed link text
+        const display = part.length > 60 ? part.slice(0, 45) + "…" + part.slice(-10) : part;
+
+        return (
+          <a key={idx} href={href} target="_blank" rel="noreferrer">
+            {display}
+          </a>
+        );
+      })}
+    </>
+  );
+}
+
+function MessageBody({ text }) {
+  const cleaned = cleanForDisplay(text);
+
+  if (!cleaned) return <div className="small">(No message body)</div>;
+
+  // paragraph split on blank lines
+  const paragraphs = cleaned.split(/\n\s*\n/g);
+
+  return (
+    <div style={{ marginTop: 10, lineHeight: 1.5 }}>
+      {paragraphs.map((p, i) => (
+        <p key={i} style={{ marginTop: i === 0 ? 0 : 10, marginBottom: 0, whiteSpace: "pre-wrap" }}>
+          <LinkifiedText text={p} />
+        </p>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const API = apiBase();
 
@@ -260,9 +341,9 @@ export default function App() {
               </div>
             ) : null}
 
-            <pre style={{ marginTop: 10 }}>
-              {(selected.cleanBodyText || selected.bodyText || selected.snippet || "").trim()}
-            </pre>
+            <h3 style={{ marginTop: 16 }}>Message</h3>
+
+            <MessageBody text={(selected.cleanBodyText || selected.bodyText || selected.snippet || "").trim()} />
 
 
             <h3 style={{ marginTop: 16 }}>AI draft reply</h3>
