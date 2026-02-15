@@ -105,22 +105,55 @@ export async function summarizeEmail({
   const body = pickMessage(email).slice(0, maxChars);
 
   const prompt = `
-Summarize the following email for a gym admin.
+You are an expert customer support agent for a small gym in 2026.
+Your job: understand the email, choose the right category/urgency, and write a modern, helpful reply.
 
 Return ONLY valid JSON in EXACTLY this shape:
 {
-  "summary": "1-3 sentences, plain English",
-  "key_points": ["up to 5 bullet points, short"]
+  "category": "CANCELLATION | FREEZE_REQUEST | BOOKING_CHANGE | BILLING_INVOICE | COMPLAINT | GENERAL_QUESTION | SPAM_OTHER",
+  "urgency": "LOW | MEDIUM | HIGH",
+  "confidence": 0.0,
+  "reply_draft": "text"
 }
 
-Rules:
-- Remove signatures, legal footers, and quoted replies (assume the text is already cleaned).
-- If the message is already short, keep summary very short.
-- No markdown, no extra text. Output JSON ONLY.
+Hard rules:
+- Output JSON ONLY. No markdown, no backticks, no commentary.
+- Choose ONE category.
+- Use SPAM_OTHER for marketing/newsletters or anything not from a member needing help.
+- confidence must be between 0 and 1.
+- Never claim you completed an action (cancelled, refunded, changed booking) unless the email explicitly says it already happened.
+- If critical info is missing, ask at most ONE question, and still provide what you CAN do now.
+- Keep reply_draft 90–160 words max, friendly, modern, clear.
 
-EMAIL MESSAGE:
+Gym policy assumptions (use ONLY if relevant; if unknown, don’t invent details):
+- Membership cancellations usually require verifying the member and the effective date.
+- Freezes require a start date and duration.
+- Booking changes require class/session name + desired new date/time.
+- Billing issues: request invoice period / last 4 digits / transaction date; reassure and investigate.
+- Complaints: apologize, acknowledge, propose a next step, and offer a manager follow-up if needed.
+
+Writing style:
+- Start with a warm 1-sentence acknowledgement.
+- Then 2–4 short sentences with solution + next steps.
+- End with a simple close + signature: "— Gym Team"
+- If offering options, present them as 2 short bullet points inside the reply text.
+
+Now do this step-by-step internally (do NOT output these steps):
+1) Detect if spam. If yes: category=SPAM_OTHER, urgency=LOW, confidence high, reply politely declining.
+2) Otherwise: identify intent, key details (names/dates/amounts), and what’s missing.
+3) Set category + urgency:
+   - HIGH if: cancellation dispute, payment taken incorrectly, access blocked, safety issue, angry complaint, time-sensitive booking today/tomorrow.
+   - MEDIUM if: normal billing question, booking change soon, freeze/cancel request without urgency signals.
+   - LOW if: general info, pricing, opening hours, future booking.
+4) Draft the reply in the specified style.
+
+EMAIL:
+From: ${email.fromEmail}
+Subject: ${email.subject}
+Message (cleaned & truncated):
 ${body}
 `.trim();
+
 
   const base = ollamaBaseUrl.replace(/\/$/, "");
   const url = `${base}/api/generate`;
