@@ -144,12 +144,51 @@ export default function App() {
     setSelected(data.email || null);
   }
 
+  async function deleteEmail(gmailId) {
+    setLoading(true);
+    try {
+      await apiFetch(`/api/emails/${gmailId}`, { method: "DELETE", timeoutMs: 30000 });
+
+      // update UI list
+      setEmails((prev) => prev.filter((e) => e.gmailId !== gmailId));
+
+      // if currently open, close it
+      if (selected?.gmailId === gmailId || selected?.id === gmailId) {
+        setSelected(null);
+      }
+
+      setStatus("Email deleted.");
+    } catch (e) {
+      setStatus(`Delete error: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function clearAllEmails() {
+    const ok = window.confirm("Clear ALL stored emails for this user? This cannot be undone.");
+    if (!ok) return;
+
+    setLoading(true);
+    try {
+      const res = await apiFetch("/api/emails", { method: "DELETE", timeoutMs: 60000 });
+      setEmails([]);
+      setSelected(null);
+      setStatus(`Cleared ${res.deleted || 0} emails.`);
+    } catch (e) {
+      setStatus(`Clear-all error: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+
   // Auto-sync once after login
   useEffect(() => {
     if (!authed) return;
 
     // Load whatever is already in Firestore right away
-    refreshEmails().catch(() => {});
+    refreshEmails().catch(() => { });
 
     if (didInitialSync) return;
 
@@ -238,6 +277,12 @@ export default function App() {
               Logout
             </button>
           </div>
+          <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={clearAllEmails} disabled={loading || emails.length === 0}>
+              Clear all
+            </button>
+          </div>
+
 
         </div>
 
@@ -250,6 +295,12 @@ export default function App() {
             emails.map((e) => (
               <button className="listItem" key={e.gmailId} onClick={() => openEmail(e.gmailId)}>
                 <div className="row" style={{ alignItems: "flex-start" }}>
+                  <button
+                    onClick={() => deleteEmail(selected.gmailId || selected.id)}
+                    disabled={loading}
+                  >
+                    Delete email
+                  </button>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
@@ -363,6 +414,13 @@ export default function App() {
                 Copy reply
               </button>
               <button onClick={() => setSelected(null)}>Close</button>
+              <button
+                onClick={() => deleteEmail(selected.gmailId || selected.id)}
+                disabled={loading}
+              >
+                Delete email
+              </button>
+
             </div>
 
             <div className="small" style={{ marginTop: 12 }}>
