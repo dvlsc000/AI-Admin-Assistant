@@ -1,6 +1,61 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, apiBase } from "./api";
 
+function Pill({ tone = "neutral", children, title }) {
+  return (
+    <span className={`pill pill--${tone}`} title={title}>
+      {children}
+    </span>
+  );
+}
+
+function urgencyTone(u) {
+  const x = String(u || "").toUpperCase();
+  if (x === "HIGH" || x === "URGENT" || x === "CRITICAL") return "danger";
+  if (x === "MEDIUM") return "warn";
+  if (x === "LOW") return "ok";
+  return "neutral";
+}
+
+function urgencyIcon(u) {
+  const x = String(u || "").toUpperCase();
+  if (x === "HIGH" || x === "URGENT" || x === "CRITICAL") return "🚨";
+  if (x === "MEDIUM") return "⏳";
+  if (x === "LOW") return "✅";
+  return "•";
+}
+
+function categoryTone(cat) {
+  const x = String(cat || "").toUpperCase();
+  if (x.includes("FREEZE")) return "info";
+  if (x.includes("CANCEL")) return "danger";
+  if (x.includes("BILL") || x.includes("PAY")) return "warn";
+  if (x.includes("COMPLAINT")) return "danger";
+  if (x.includes("BOOK") || x.includes("CLASS")) return "info";
+  return "neutral";
+}
+
+function categoryIcon(cat) {
+  const x = String(cat || "").toUpperCase();
+  if (x.includes("FREEZE")) return "🧊";
+  if (x.includes("CANCEL")) return "🛑";
+  if (x.includes("BILL") || x.includes("PAY")) return "💳";
+  if (x.includes("COMPLAINT")) return "🗣️";
+  if (x.includes("BOOK") || x.includes("CLASS")) return "📅";
+  if (x.includes("GENERAL")) return "❓";
+  return "✉️";
+}
+
+function prettyLabel(s) {
+  if (!s) return "";
+  return String(s)
+    .toLowerCase()
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+
 function Badge({ children }) {
   return <span className="badge">{children}</span>;
 }
@@ -207,7 +262,7 @@ export default function App() {
     if (!authed) return;
 
     // Load whatever is already in Firestore right away
-    refreshEmails().catch(() => {});
+    refreshEmails().catch(() => { });
 
     if (didInitialSync) return;
 
@@ -324,17 +379,10 @@ export default function App() {
                     </button>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontWeight: 900,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap"
-                        }}
-                        title={displayTitle}
-                      >
+                      <div className="emailTitle" title={displayTitle}>
                         {displayTitle}
                       </div>
+
 
                       <div
                         className="small"
@@ -350,8 +398,16 @@ export default function App() {
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-                      {e.ai?.category && <Badge>{e.ai.category}</Badge>}
-                      {e.ai?.urgency && <Badge>{e.ai.urgency}</Badge>}
+                      {e.ai?.category && (
+                        <Pill tone={categoryTone(e.ai.category)} title="Category">
+                          {categoryIcon(e.ai.category)} {prettyLabel(e.ai.category)}
+                        </Pill>
+                      )}
+                      {e.ai?.urgency && (
+                        <Pill tone={urgencyTone(e.ai.urgency)} title="Urgency">
+                          {urgencyIcon(e.ai.urgency)} {prettyLabel(e.ai.urgency)}
+                        </Pill>
+                      )}
                     </div>
                   </div>
 
@@ -410,9 +466,22 @@ export default function App() {
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-                {selected.ai?.category && <Badge>{selected.ai.category}</Badge>}
-                {selected.ai?.urgency && <Badge>Urgency: {selected.ai.urgency}</Badge>}
-                {typeof selected.ai?.confidence === "number" && <Badge>Conf: {percent(selected.ai.confidence)}</Badge>}
+                {selected.ai?.category && (
+                  <Pill tone={categoryTone(selected.ai.category)} title="Category">
+                    {categoryIcon(selected.ai.category)} {prettyLabel(selected.ai.category)}
+                  </Pill>
+                )}
+                {selected.ai?.urgency && (
+                  <Pill tone={urgencyTone(selected.ai.urgency)} title="Urgency">
+                    {urgencyIcon(selected.ai.urgency)} {prettyLabel(selected.ai.urgency)}
+                  </Pill>
+                )}
+                {typeof selected.ai?.confidence === "number" && (
+                  <Pill tone="neutral" title="Model confidence">
+                    🎯 {percent(selected.ai.confidence)}
+                  </Pill>
+                )}
+
               </div>
             </div>
 
