@@ -268,8 +268,6 @@ export default function App() {
 
     (async () => {
       setLoading(true);
-      setStatus("Syncing inbox + generating drafts…");
-
       try {
         // Silent health check so sync errors are nicer if Ollama is down
         await refreshHealth();
@@ -282,10 +280,7 @@ export default function App() {
 
         const secs = Math.round((data.durationMs || 0) / 1000);
         const errNote = data.aiErrors ? ` (AI errors: ${data.aiErrors})` : "";
-        setStatus(
-          `Done. Fetched: ${data.fetched}, created: ${data.created}, triaged: ${data.triaged}${errNote} (${secs}s)`
-        );
-
+       
         await refreshEmails();
       } catch (e) {
         setStatus(`Error: ${e.message}`);
