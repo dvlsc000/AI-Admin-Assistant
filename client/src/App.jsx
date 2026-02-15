@@ -16,12 +16,10 @@ function cleanForDisplay(text) {
   let t = String(text);
 
   // Remove CSS blocks often appearing in marketing emails
-  // (very common: "body { margin: 0; padding: 0; } ...")
   t = t.replace(/(^|\n)\s*body\s*\{[\s\S]*?\}\s*(?=\n|$)/gi, "\n");
   t = t.replace(/(^|\n)\s*@media\s*[\s\S]*?\}\s*(?=\n|$)/gi, "\n");
 
   // Remove super long tracking links (example: t1.marketing.ryanair...)
-  // Keep normal links.
   t = t
     .split("\n")
     .filter((line) => {
@@ -45,8 +43,9 @@ function cleanForDisplay(text) {
   return t;
 }
 
+// Linkify URLs in text, but truncate them if they're super long
 function LinkifiedText({ text }) {
-  // basic linkify
+  // Split by URLs, keeping the URLs in the result
   const parts = text.split(/(https?:\/\/[^\s)]+)|(www\.[^\s)]+)/gi);
 
   return (
@@ -58,8 +57,6 @@ function LinkifiedText({ text }) {
         if (!isUrl) return <span key={idx}>{part}</span>;
 
         const href = part.startsWith("http") ? part : `https://${part}`;
-
-        // shorten displayed link text
         const display = part.length > 60 ? part.slice(0, 45) + "…" + part.slice(-10) : part;
 
         return (
@@ -77,13 +74,19 @@ function MessageBody({ text }) {
 
   if (!cleaned) return <div className="small">(No message body)</div>;
 
-  // paragraph split on blank lines
   const paragraphs = cleaned.split(/\n\s*\n/g);
 
   return (
     <div style={{ marginTop: 10, lineHeight: 1.5 }}>
       {paragraphs.map((p, i) => (
-        <p key={i} style={{ marginTop: i === 0 ? 0 : 10, marginBottom: 0, whiteSpace: "pre-wrap" }}>
+        <p
+          key={i}
+          style={{
+            marginTop: i === 0 ? 0 : 10,
+            marginBottom: 0,
+            whiteSpace: "pre-wrap"
+          }}
+        >
           <LinkifiedText text={p} />
         </p>
       ))}
@@ -100,7 +103,11 @@ export default function App() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // kept, but no longer shown in UI
   const [health, setHealth] = useState({ ok: false, ollamaOk: null, model: null });
+
+  // prevent repeated auto-syncs
+  const [didInitialSync, setDidInitialSync] = useState(false);
 
   const authed = useMemo(() => !!me?.user, [me]);
 
@@ -119,8 +126,11 @@ export default function App() {
     try {
       const h = await apiFetch("/api/health", { timeoutMs: 5000 });
       setHealth(h);
+      return h;
     } catch {
-      setHealth({ ok: false, ollamaOk: false, model: null });
+      const h = { ok: false, ollamaOk: false, model: null };
+      setHealth(h);
+      return h;
     }
   }
 
@@ -134,31 +144,44 @@ export default function App() {
     setSelected(data.email || null);
   }
 
-  async function syncInbox() {
-    setLoading(true);
-    setStatus("Syncing unread inbox + generating drafts…");
+  // Auto-sync once after login
+  useEffect(() => {
+    if (!authed) return;
 
-    try {
-      await refreshHealth();
+    // Load whatever is already in Firestore right away
+    refreshEmails().catch(() => {});
 
-      const data = await apiFetch("/api/emails/sync", {
-        method: "POST",
-        body: JSON.stringify({ maxResults: 20 }),
-        timeoutMs: 180000
-      });
+    if (didInitialSync) return;
 
-      const secs = Math.round((data.durationMs || 0) / 1000);
-      const errNote = data.triageErrors ? ` (AI errors: ${data.triageErrors})` : "";
+    (async () => {
+      setLoading(true);
+      setStatus("Syncing inbox + generating drafts…");
 
-      setStatus(`Done. Fetched: ${data.fetched}, created: ${data.created}, triaged: ${data.triaged}${errNote} (${secs}s)`);
+      try {
+        // Silent health check so sync errors are nicer if Ollama is down
+        await refreshHealth();
 
-      await refreshEmails();
-    } catch (e) {
-      setStatus(`Error: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }
+        const data = await apiFetch("/api/emails/sync", {
+          method: "POST",
+          body: JSON.stringify({ maxResults: 20 }),
+          timeoutMs: 180000
+        });
+
+        const secs = Math.round((data.durationMs || 0) / 1000);
+        const errNote = data.aiErrors ? ` (AI errors: ${data.aiErrors})` : "";
+        setStatus(
+          `Done. Fetched: ${data.fetched}, created: ${data.created}, triaged: ${data.triaged}${errNote} (${secs}s)`
+        );
+
+        await refreshEmails();
+      } catch (e) {
+        setStatus(`Error: ${e.message}`);
+      } finally {
+        setLoading(false);
+        setDidInitialSync(true);
+      }
+    })();
+  }, [authed, didInitialSync]);
 
   async function logout() {
     setLoading(true);
@@ -168,19 +191,13 @@ export default function App() {
       setEmails([]);
       setSelected(null);
       setStatus("Logged out.");
+      setDidInitialSync(false);
     } catch (e) {
       setStatus(`Logout error: ${e.message}`);
     } finally {
       setLoading(false);
     }
   }
-
-  useEffect(() => {
-    if (authed) {
-      refreshHealth();
-      refreshEmails();
-    }
-  }, [authed]);
 
   if (!me) return <div style={{ padding: 24 }}>Loading…</div>;
 
@@ -207,15 +224,6 @@ export default function App() {
     );
   }
 
-  const ollamaBadge =
-    health.ollamaOk == null ? (
-      <Badge>Ollama: ?</Badge>
-    ) : health.ollamaOk ? (
-      <Badge>Ollama: OK ({health.model})</Badge>
-    ) : (
-      <Badge>Ollama: DOWN</Badge>
-    );
-
   return (
     <div className="container">
       <div className="sidebar">
@@ -226,49 +234,43 @@ export default function App() {
               <div style={{ fontWeight: 900 }}>{me.user.email}</div>
               <div className="small">{me.user.displayName || ""}</div>
             </div>
-            <button onClick={logout} disabled={loading}>
+            <button onClick={logout}>
               Logout
             </button>
           </div>
 
-          <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {ollamaBadge}
-            <button onClick={refreshHealth} disabled={loading}>
-              Check health
-            </button>
-          </div>
-
-          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-            <button onClick={syncInbox} disabled={loading}>
-              {loading ? "Working…" : "Sync + Draft"}
-            </button>
-            <button onClick={refreshEmails} disabled={loading}>
-              Refresh
-            </button>
-          </div>
-
-          {status && (
-            <div style={{ marginTop: 10 }} className="small">
-              {status}
-            </div>
-          )}
         </div>
 
         <h3 style={{ marginTop: 16, marginBottom: 8 }}>Inbox</h3>
 
         <div className="list">
           {emails.length === 0 ? (
-            <div className="small">No emails yet. Click “Sync + Draft”.</div>
+            <div className="small">{loading ? "Loading inbox…" : "No unread emails found."}</div>
           ) : (
             emails.map((e) => (
               <button className="listItem" key={e.gmailId} onClick={() => openEmail(e.gmailId)}>
                 <div className="row" style={{ alignItems: "flex-start" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div
+                      style={{
+                        fontWeight: 900,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap"
+                      }}
+                    >
                       {e.subject || "(no subject)"}
                     </div>
 
-                    <div className="small" style={{ marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div
+                      className="small"
+                      style={{
+                        marginTop: 4,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap"
+                      }}
+                    >
                       {e.fromEmail}
                     </div>
                   </div>
@@ -279,7 +281,15 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="small" style={{ marginTop: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div
+                  className="small"
+                  style={{
+                    marginTop: 8,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }}
+                >
                   {e.snippet || ""}
                 </div>
 
@@ -320,8 +330,6 @@ export default function App() {
               </div>
             </div>
 
-            <h3 style={{ marginTop: 16 }}>Message</h3>
-
             {selected.aiSummary?.summary ? (
               <div className="card" style={{ marginTop: 10 }}>
                 <div style={{ fontWeight: 900, marginBottom: 6 }}>Short summary</div>
@@ -342,12 +350,10 @@ export default function App() {
             ) : null}
 
             <h3 style={{ marginTop: 16 }}>Message</h3>
-
             <MessageBody text={(selected.cleanBodyText || selected.bodyText || selected.snippet || "").trim()} />
 
-
             <h3 style={{ marginTop: 16 }}>AI draft reply</h3>
-            <pre>{selected.ai?.reply_draft || "(No draft yet — click Sync + Draft)"}</pre>
+            <pre>{selected.ai?.reply_draft || "(No draft available yet)"}</pre>
 
             <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
               <button
