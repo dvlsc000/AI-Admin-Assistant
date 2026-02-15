@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, apiBase } from "./api";
 
 function Badge({ children }) {
@@ -103,6 +103,9 @@ export default function App() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // for auto-scrolling to new emails or open email details
+  const emailViewRef = useRef(null);
+
   // kept, but no longer shown in UI
   const [health, setHealth] = useState({ ok: false, ollamaOk: null, model: null });
 
@@ -110,6 +113,20 @@ export default function App() {
   const [didInitialSync, setDidInitialSync] = useState(false);
 
   const authed = useMemo(() => !!me?.user, [me]);
+
+  useEffect(() => {
+    const key = selected?.gmailId || selected?.id;
+    if (!key) return;
+
+    // If main scroll is the window/page, this always works.
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+
+    // Also try the main panel if it is scrollable
+    emailViewRef.current?.scrollTo?.({ top: 0, behavior: "auto" });
+    emailViewRef.current && (emailViewRef.current.scrollTop = 0);
+  }, [selected?.gmailId, selected?.id]);
+
+
 
   useEffect(() => {
     (async () => {
@@ -355,7 +372,7 @@ export default function App() {
         </div>
       </div>
 
-      <div className="main">
+      <div className="main" ref={emailViewRef}>
         {!selected ? (
           <div className="card">
             <h2 style={{ marginTop: 0 }}>Select an email</h2>
