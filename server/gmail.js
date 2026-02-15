@@ -146,3 +146,18 @@ function cleanEmailBody(text) {
 
   return t;
 }
+
+export async function markEmailAsRead({ oauth2Client, gmailId }) {
+  const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: gmailId,
+    requestBody: {
+      removeLabelIds: ["UNREAD"]
+    }
+  });
+
+  return { ok: true };
+}
+
