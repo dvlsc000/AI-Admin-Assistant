@@ -127,27 +127,23 @@ function LinkifiedText({ text }) {
 function MessageBody({ text }) {
   const cleaned = cleanForDisplay(text);
 
-  if (!cleaned) return <div className="small">(No message body)</div>;
+  if (!cleaned) return <div className="emailEmpty">(No message body)</div>;
 
   const paragraphs = cleaned.split(/\n\s*\n/g);
 
   return (
-    <div style={{ marginTop: 10, lineHeight: 1.5 }}>
-      {paragraphs.map((p, i) => (
-        <p
-          key={i}
-          style={{
-            marginTop: i === 0 ? 0 : 10,
-            marginBottom: 0,
-            whiteSpace: "pre-wrap"
-          }}
-        >
-          <LinkifiedText text={p} />
-        </p>
-      ))}
+    <div className="emailViewer">
+      <div className="emailPaper">
+        {paragraphs.map((p, i) => (
+          <p key={i} className="emailPara">
+            <LinkifiedText text={p.trim()} />
+          </p>
+        ))}
+      </div>
     </div>
   );
 }
+
 
 // Ensure UI title is 2-3 words max (defensive)
 function shortTitle(t) {
@@ -155,6 +151,24 @@ function shortTitle(t) {
   const words = String(t).trim().split(/\s+/).filter(Boolean).slice(0, 3);
   return words.join(" ");
 }
+
+function urgencyRank(u) {
+  const x = String(u || "").toUpperCase();
+  if (x === "CRITICAL" || x === "URGENT" || x === "HIGH") return 3;
+  if (x === "MEDIUM") return 2;
+  if (x === "LOW") return 1;
+  return 0; // NONE/unknown
+}
+
+function safeTime(iso) {
+  const t = Date.parse(iso || "");
+  return Number.isFinite(t) ? t : 0;
+}
+
+function uniqueSorted(arr) {
+  return Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
 
 export default function App() {
   const API = apiBase();
@@ -164,6 +178,12 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Filters + sorting
+  const [filterUrgency, setFilterUrgency] = useState("ALL");   // HIGH | MEDIUM | LOW | NONE | ALL
+  const [filterCategory, setFilterCategory] = useState("ALL"); // e.g. BILLING_PAYMENT | ... | ALL
+  const [sortBy, setSortBy] = useState("DATE_DESC");           // DATE_DESC, DATE_ASC, URGENCY_DESC, ...
+
 
   // for auto-scrolling to new emails or open email details
   const emailViewRef = useRef(null);
@@ -175,6 +195,91 @@ export default function App() {
   const [didInitialSync, setDidInitialSync] = useState(false);
 
   const authed = useMemo(() => !!me?.user, [me]);
+
+  const urgencyOptions = useMemo(() => {
+    // Show common choices even if missing in current batch
+    return ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE"];
+  }, []);
+
+  const categoryOptions = useMemo(() => {
+    const cats = emails.map((e) => e.ai?.category || "").filter(Boolean);
+    return ["ALL", ...uniqueSorted(cats)];
+  }, [emails]);
+
+  const visibleEmails = useMemo(() => {
+    // 1) filter
+    let list = emails.filter((e) => {
+      const u = String(e.ai?.urgency || "").toUpperCase();
+      const c = String(e.ai?.category || "").toUpperCase();
+
+      const urgencyOk =
+        filterUrgency === "ALL"
+          ? true
+          : filterUrgency === "NONE"
+            ? !u
+            : u === filterUrgency;
+
+      const categoryOk =
+        filterCategory === "ALL"
+          ? true
+          : c === String(filterCategory).toUpperCase();
+
+      return urgencyOk && categoryOk;
+    });
+
+    // 2) sort
+    const cmp = (a, b) => {
+      const au = urgencyRank(a.ai?.urgency);
+      const bu = urgencyRank(b.ai?.urgency);
+
+      const ad = safeTime(a.dateIso);
+      const bd = safeTime(b.dateIso);
+
+      const ac = String(a.ai?.category || "");
+      const bc = String(b.ai?.category || "");
+
+      const acon = typeof a.ai?.confidence === "number" ? a.ai.confidence : -1;
+      const bcon = typeof b.ai?.confidence === "number" ? b.ai.confidence : -1;
+
+      const afrom = String(a.fromEmail || "");
+      const bfrom = String(b.fromEmail || "");
+
+      const asub = String(a.subject || "");
+      const bsub = String(b.subject || "");
+
+      switch (sortBy) {
+        case "DATE_ASC":
+          return ad - bd;
+
+        case "URGENCY_DESC":
+          return bu - au || bd - ad; // tie-breaker by newest
+        case "URGENCY_ASC":
+          return au - bu || bd - ad;
+
+        case "CATEGORY_ASC":
+          return ac.localeCompare(bc) || bd - ad;
+        case "CATEGORY_DESC":
+          return bc.localeCompare(ac) || bd - ad;
+
+        case "CONF_DESC":
+          return bcon - acon || bd - ad;
+        case "CONF_ASC":
+          return acon - bcon || bd - ad;
+
+        case "FROM_ASC":
+          return afrom.localeCompare(bfrom) || bd - ad;
+        case "SUBJECT_ASC":
+          return asub.localeCompare(bsub) || bd - ad;
+
+        case "DATE_DESC":
+        default:
+          return bd - ad;
+      }
+    };
+
+    return [...list].sort(cmp);
+  }, [emails, filterUrgency, filterCategory, sortBy]);
+
 
   // scroll to top when selecting a new email
   useEffect(() => {
@@ -280,7 +385,7 @@ export default function App() {
 
         const secs = Math.round((data.durationMs || 0) / 1000);
         const errNote = data.aiErrors ? ` (AI errors: ${data.aiErrors})` : "";
-       
+
         await refreshEmails();
       } catch (e) {
         setStatus(`Error: ${e.message}`);
@@ -351,12 +456,70 @@ export default function App() {
         </div>
 
         <h3 style={{ marginTop: 16, marginBottom: 8 }}>Inbox</h3>
+        <div className="card" style={{ marginTop: 10 }}>
+          <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div className="small"><b>Filter: Priority</b></div>
+              <select value={filterUrgency} onChange={(e) => setFilterUrgency(e.target.value)}>
+                {urgencyOptions.map((u) => (
+                  <option key={u} value={u}>
+                    {u === "ALL" ? "All" : u === "NONE" ? "None/Unknown" : prettyLabel(u)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div className="small"><b>Filter: Type</b></div>
+              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+                {categoryOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c === "ALL" ? "All" : prettyLabel(c)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div className="small"><b>Sort</b></div>
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="DATE_DESC">Newest</option>
+                <option value="DATE_ASC">Oldest</option>
+                <option value="URGENCY_DESC">Priority (High → Low)</option>
+                <option value="URGENCY_ASC">Priority (Low → High)</option>
+                <option value="CATEGORY_ASC">Type (A → Z)</option>
+                <option value="CATEGORY_DESC">Type (Z → A)</option>
+                <option value="CONF_DESC">Confidence (High → Low)</option>
+                <option value="CONF_ASC">Confidence (Low → High)</option>
+                <option value="FROM_ASC">Sender (A → Z)</option>
+                <option value="SUBJECT_ASC">Subject (A → Z)</option>
+              </select>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => {
+                  setFilterUrgency("ALL");
+                  setFilterCategory("ALL");
+                  setSortBy("DATE_DESC");
+                }}
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <div className="small" style={{ marginTop: 10 }}>
+            Showing <b>{visibleEmails.length}</b> of <b>{emails.length}</b>
+          </div>
+        </div>
 
         <div className="list">
           {emails.length === 0 ? (
             <div className="small">{loading ? "Loading inbox…" : "No unread emails found."}</div>
           ) : (
-            emails.map((e) => {
+            visibleEmails.map((e) => {
+
               const displayTitle =
                 shortTitle(e.aiSummary?.title) || e.subject || "(no subject)";
 
