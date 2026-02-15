@@ -6,6 +6,20 @@ export function makeOAuthClient({ clientId, clientSecret, redirectUri, tokens })
   return oauth2;
 }
 
+export async function markEmailAsRead({ oauth2Client, gmailId }) {
+  const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: gmailId,
+    requestBody: {
+      removeLabelIds: ["UNREAD"]
+    }
+  });
+
+  return { ok: true };
+}
+
 export async function fetchLatestEmails({ oauth2Client, maxResults = 20, labelIds = ["INBOX"] }) {
   const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
@@ -146,18 +160,3 @@ function cleanEmailBody(text) {
 
   return t;
 }
-
-export async function markEmailAsRead({ oauth2Client, gmailId }) {
-  const gmail = google.gmail({ version: "v1", auth: oauth2Client });
-
-  await gmail.users.messages.modify({
-    userId: "me",
-    id: gmailId,
-    requestBody: {
-      removeLabelIds: ["UNREAD"]
-    }
-  });
-
-  return { ok: true };
-}
-

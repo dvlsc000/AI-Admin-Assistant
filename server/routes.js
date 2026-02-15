@@ -235,8 +235,6 @@ export function makeRoutes({ firestore, env }) {
       const docRef = firestore.collection("users").doc(user.id).collection("emails").doc(gmailId);
       const snap = await docRef.get();
 
-      await markEmailAsRead({ oauth2Client, gmailId });
-
       if (!snap.exists) return res.status(404).json({ error: "Email not found" });
 
       res.json({ email: { id: snap.id, ...snap.data() } });
