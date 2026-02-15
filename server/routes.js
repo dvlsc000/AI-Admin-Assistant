@@ -133,7 +133,7 @@ export function makeRoutes({ firestore, env }) {
         const after = await docRef.get();
         const data = after.data();
 
-        // ✅ summary if long and not yet summarized
+        // summary if long and not yet summarized
         const msg = (e.cleanBodyText || e.bodyText || e.snippet || "").trim();
         if (!data.aiSummary && msg.length > SUMMARY_THRESHOLD) {
           try {
@@ -159,8 +159,8 @@ export function makeRoutes({ firestore, env }) {
           }
         }
 
-        // ✅ triage only if missing
-        if (!data.ai) {
+        // triage only if missing
+        if (!data.ai || !data.ai.reply_draft || data.ai.error) {
           try {
             const triage = await triageEmail({
               email: e,

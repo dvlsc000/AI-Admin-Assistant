@@ -24,17 +24,64 @@ function pickMessage(email) {
   return (email.cleanBodyText || email.bodyText || email.snippet || "").trim();
 }
 
+function extractJson(text) {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start === -1 || end === -1) throw new Error("Model did not return JSON (no braces found).");
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    throw new Error("Model returned malformed JSON.");
+  }
+}
+
+async function ollamaGenerate({ ollamaBaseUrl, model, prompt, timeoutMs, temperature = 0.2 }) {
+  const base = ollamaBaseUrl.replace(/\/$/, "");
+  const url = `${base}/api/generate`;
+
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        prompt,
+        stream: false,
+        options: { temperature }
+      }),
+      signal: controller.signal
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`Ollama error ${res.status}: ${txt.slice(0, 300)}`);
+    }
+
+    const data = await res.json().catch(() => ({}));
+    return (data.response || "").trim();
+  } catch (err) {
+    if (err?.name === "AbortError") throw new Error(`Ollama timeout after ${timeoutMs}ms`);
+    throw new Error(`Ollama request failed: ${err?.message || err}`);
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function triageEmail({
   email,
   ollamaBaseUrl,
   model,
-  timeoutMs = 60000,
-  maxChars = 1500
+  timeoutMs = 180000,
+  maxChars = 2000
 }) {
   const body = pickMessage(email).slice(0, maxChars);
 
   const prompt = `
-You are an assistant for a small gym.
+You are an expert customer support agent for a small gym in 2026.
+Your job: understand the email, choose the right category/urgency, and write a modern, helpful reply.
 
 Return ONLY valid JSON in EXACTLY this shape:
 {
@@ -45,12 +92,79 @@ Return ONLY valid JSON in EXACTLY this shape:
 }
 
 Rules:
+
+Output / formatting:
+- Return ONLY valid JSON in EXACTLY the requested shape.
+- Output JSON ONLY. No markdown, no backticks, no extra text.
 - Choose ONE category only.
-- Use SPAM_OTHER for marketing/spam.
 - confidence must be between 0 and 1.
-- reply_draft must be short, polite, and professional.
-- If key details are missing, ask ONE clarifying question in the reply.
-- Output JSON ONLY. No markdown. No extra text.
+
+Spam handling:
+- Use SPAM_OTHER for marketing, newsletters, promotions, or anything that is not a real member support request.
+- If SPAM_OTHER, urgency must be LOW.
+- For spam, reply_draft should politely decline and be extremely short.
+
+Safety + accuracy:
+- Never claim you completed an action (cancelled membership, issued refund, changed booking, froze membership)
+  unless the email explicitly confirms it already happened.
+- Never invent gym policies, prices, dates, or account details.
+- If the email asks for something you cannot confirm, say you can help and will check it.
+
+Urgency logic:
+- HIGH if the message suggests:
+  - payment taken incorrectly / charged twice
+  - cancellation dispute / angry complaint
+  - access blocked / membership not working
+  - safety issue / harassment / injury
+  - booking issue for today or tomorrow
+- MEDIUM if:
+  - normal cancellation request
+  - freeze request
+  - booking change in the next few days
+  - billing questions without strong anger or urgency
+- LOW if:
+  - general questions, pricing, opening hours, future plans
+  - non-urgent booking change far in the future
+
+Reply quality requirements:
+- reply_draft must be 90–160 words.
+- Tone must be modern, friendly, confident, and professional.
+- Use short sentences. Avoid robotic wording.
+- Provide clear next steps.
+- If key info is missing, ask at most ONE clarifying question.
+- Always include what you CAN do now, even if asking a question.
+- Ignore quoted replies, legal footers, tracking links, or marketing junk in the email body.
+
+Greeting rules:
+- If the sender’s first name is clearly present in the email text (examples: "My name is John", "This is Sarah", "Regards, Mike"),
+  start the reply with: "Hi John," (first name only).
+- If no name is confidently found, start with: "Hi there,"
+- Do NOT guess names from the email address.
+
+Sign-off rules:
+- Always end the reply with EXACTLY this closing:
+
+Kind regards,
+Management Team
+
+- Do not include any other signature text.
+
+Reply structure (must follow):
+1) Greeting line (Hi Name / Hi there)
+2) 1 sentence acknowledgement
+3) 2–4 short sentences explaining the solution / next steps
+4) If needed, include up to 2 bullet points for options
+5) If needed, ask ONE question (only one)
+6) Closing + signature exactly as specified
+
+Category guidance (use ONLY if relevant):
+- CANCELLATION: confirm member identity + effective cancellation date.
+- FREEZE_REQUEST: ask for freeze start date + duration.
+- BOOKING_CHANGE: ask for class/session + preferred new date/time.
+- BILLING_INVOICE: ask for date/amount and any identifying detail; reassure and investigate.
+- COMPLAINT: apologize, acknowledge, propose next step, offer manager follow-up.
+- GENERAL_QUESTION: answer directly if possible; otherwise ask one question.
+- SPAM_OTHER: politely decline.
 
 EMAIL:
 From: ${email.fromEmail}
@@ -59,34 +173,13 @@ Message (cleaned & truncated):
 ${body}
 `.trim();
 
-  const base = ollamaBaseUrl.replace(/\/$/, "");
-  const url = `${base}/api/generate`;
-
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
-
-  let res;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, prompt, stream: false }),
-      signal: controller.signal
-    });
-  } catch (err) {
-    if (err.name === "AbortError") throw new Error(`Ollama timeout after ${timeoutMs}ms`);
-    throw new Error(`Ollama request failed: ${err.message}`);
-  } finally {
-    clearTimeout(t);
-  }
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`Ollama error ${res.status}: ${txt.slice(0, 300)}`);
-  }
-
-  const data = await res.json().catch(() => ({}));
-  const text = (data.response || "").trim();
+  const text = await ollamaGenerate({
+    ollamaBaseUrl,
+    model,
+    prompt,
+    timeoutMs,
+    temperature: 0.2
+  });
 
   const json = extractJson(text);
   const parsed = TriageSchema.safeParse(json);
@@ -105,99 +198,34 @@ export async function summarizeEmail({
   const body = pickMessage(email).slice(0, maxChars);
 
   const prompt = `
-You are an expert customer support agent for a small gym in 2026.
-Your job: understand the email, choose the right category/urgency, and write a modern, helpful reply.
+Summarize the following email for a gym admin.
 
 Return ONLY valid JSON in EXACTLY this shape:
 {
-  "category": "CANCELLATION | FREEZE_REQUEST | BOOKING_CHANGE | BILLING_INVOICE | COMPLAINT | GENERAL_QUESTION | SPAM_OTHER",
-  "urgency": "LOW | MEDIUM | HIGH",
-  "confidence": 0.0,
-  "reply_draft": "text"
+  "summary": "1-3 sentences, plain English",
+  "key_points": ["up to 5 bullet points, short"]
 }
 
-Hard rules:
-- Output JSON ONLY. No markdown, no backticks, no commentary.
-- Choose ONE category.
-- Use SPAM_OTHER for marketing/newsletters or anything not from a member needing help.
-- confidence must be between 0 and 1.
-- Never claim you completed an action (cancelled, refunded, changed booking) unless the email explicitly says it already happened.
-- If critical info is missing, ask at most ONE question, and still provide what you CAN do now.
-- Keep reply_draft 90–160 words max, friendly, modern, clear.
+Rules:
+- Remove signatures, legal footers, and quoted replies (assume the text is already cleaned).
+- If the message is already short, keep summary very short.
+- No markdown, no extra text. Output JSON ONLY.
 
-Gym policy assumptions (use ONLY if relevant; if unknown, don’t invent details):
-- Membership cancellations usually require verifying the member and the effective date.
-- Freezes require a start date and duration.
-- Booking changes require class/session name + desired new date/time.
-- Billing issues: request invoice period / last 4 digits / transaction date; reassure and investigate.
-- Complaints: apologize, acknowledge, propose a next step, and offer a manager follow-up if needed.
-
-Writing style:
-- Start with a warm 1-sentence acknowledgement.
-- Then 2–4 short sentences with solution + next steps.
-- End with a simple close + signature: "— Gym Team"
-- If offering options, present them as 2 short bullet points inside the reply text.
-
-Now do this step-by-step internally (do NOT output these steps):
-1) Detect if spam. If yes: category=SPAM_OTHER, urgency=LOW, confidence high, reply politely declining.
-2) Otherwise: identify intent, key details (names/dates/amounts), and what’s missing.
-3) Set category + urgency:
-   - HIGH if: cancellation dispute, payment taken incorrectly, access blocked, safety issue, angry complaint, time-sensitive booking today/tomorrow.
-   - MEDIUM if: normal billing question, booking change soon, freeze/cancel request without urgency signals.
-   - LOW if: general info, pricing, opening hours, future booking.
-4) Draft the reply in the specified style.
-
-EMAIL:
-From: ${email.fromEmail}
-Subject: ${email.subject}
-Message (cleaned & truncated):
+EMAIL MESSAGE:
 ${body}
 `.trim();
 
-
-  const base = ollamaBaseUrl.replace(/\/$/, "");
-  const url = `${base}/api/generate`;
-
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
-
-  let res;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, prompt, stream: false }),
-      signal: controller.signal
-    });
-  } catch (err) {
-    if (err.name === "AbortError") throw new Error(`Ollama timeout after ${timeoutMs}ms`);
-    throw new Error(`Ollama request failed: ${err.message}`);
-  } finally {
-    clearTimeout(t);
-  }
-
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(`Ollama error ${res.status}: ${txt.slice(0, 300)}`);
-  }
-
-  const data = await res.json().catch(() => ({}));
-  const text = (data.response || "").trim();
+  const text = await ollamaGenerate({
+    ollamaBaseUrl,
+    model,
+    prompt,
+    timeoutMs,
+    temperature: 0.2
+  });
 
   const json = extractJson(text);
   const parsed = SummarySchema.safeParse(json);
   if (!parsed.success) throw new Error("Summary JSON failed schema validation: " + parsed.error.message);
 
   return parsed.data;
-}
-
-function extractJson(text) {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("Model did not return JSON (no braces found).");
-  try {
-    return JSON.parse(text.slice(start, end + 1));
-  } catch {
-    throw new Error("Model returned malformed JSON.");
-  }
 }
