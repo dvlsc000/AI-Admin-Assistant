@@ -1,97 +1,404 @@
+/* =========================
+   Global / Theme
+   ========================= */
+
 :root {
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+  --bg0: #0b1020;
+  --bg1: #0a1226;
+  --panel: rgba(255, 255, 255, 0.06);
+  --panel2: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.10);
+  --border2: rgba(255, 255, 255, 0.14);
+
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.68);
+  --faint: rgba(255, 255, 255, 0.54);
+
+  --shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+  --shadow2: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  --radius: 16px;
+  --radius2: 12px;
+
+  --primary: #7c8cff;
+  --primary2: #5a6bff;
+
+  --ok: #21c17a;
+  --warn: #f2b84b;
+  --danger: #ff5c7a;
+
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
     "Segoe UI Emoji";
-  line-height: 1.35;
+
+  font-family: var(--sans);
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Reset-ish */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
   margin: 0;
-  background: #0b0f17;
-  color: #e6e9ef;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 800px at 15% 10%, rgba(124, 140, 255, 0.12), transparent 55%),
+    radial-gradient(900px 600px at 85% 15%, rgba(33, 193, 122, 0.10), transparent 55%),
+    linear-gradient(180deg, var(--bg0), var(--bg1));
+  display: block;         /* IMPORTANT: no centering */
+  min-width: 320px;
+  overflow: hidden;       /* keep app clean */
 }
 
-button {
-  border: 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: #1d2a44;
-  color: #e6e9ef;
-  cursor: pointer;
-  font-weight: 700;
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+a:hover {
+  color: #a8b1ff;
+  text-decoration: underline;
 }
 
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+/* =========================
+   Layout
+   ========================= */
 
 .container {
+  height: 100vh;
+  width: min(1400px, 100%);
+  margin: 0 auto;
+  padding: 18px;
   display: grid;
   grid-template-columns: 360px 1fr;
-  min-height: 100vh;
+  gap: 16px;
+}
+
+.sidebar,
+.main {
+  min-height: 0; /* allow scroll containers */
 }
 
 .sidebar {
-  padding: 18px;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .main {
-  padding: 18px;
+  overflow: auto;
+  padding-right: 4px;
+  scroll-behavior: smooth;
 }
 
+/* nicer scrollbars */
+.main::-webkit-scrollbar,
+.sidebar::-webkit-scrollbar {
+  width: 10px;
+}
+.main::-webkit-scrollbar-thumb,
+.sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  border: 2px solid rgba(0, 0, 0, 0);
+  background-clip: padding-box;
+}
+.main::-webkit-scrollbar-track,
+.sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* =========================
+   Cards / Rows
+   ========================= */
+
 .card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow2);
+  padding: 14px 14px;
 }
 
 .row {
   display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: 12px;
+  align-items: center;
 }
 
 .small {
-  opacity: 0.85;
-  font-size: 0.92rem;
+  font-size: 12.5px;
+  color: var(--muted);
 }
+
+/* =========================
+   Typography
+   ========================= */
+
+h2 {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+h3 {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.86);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+h2,
+h3 {
+  margin: 0;
+}
+
+b {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+/* =========================
+   Buttons (clean, consistent)
+   ========================= */
+
+button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: transform 0.08s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+}
+
+button:hover {
+  border-color: rgba(124, 140, 255, 0.40);
+  background: rgba(124, 140, 255, 0.10);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Make the first action button in toolbars feel "primary" without changing JSX */
+.card .row button:first-child {
+  background: rgba(124, 140, 255, 0.14);
+  border-color: rgba(124, 140, 255, 0.35);
+}
+.card .row button:first-child:hover {
+  background: rgba(124, 140, 255, 0.22);
+}
+
+/* Small delete buttons inside list items */
+.listItem > .row > button {
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.listItem > .row > button:hover {
+  border-color: rgba(255, 92, 122, 0.40);
+  background: rgba(255, 92, 122, 0.10);
+}
+
+/* =========================
+   Badges (pill)
+   ========================= */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border2);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.88);
+  text-transform: uppercase;
+  user-select: none;
+}
+
+/* Badge “flavors” based on text (no JSX change needed) */
+.badge:has(:not(*)) {}
+
+/* CSS-only best-effort coloring by substring is limited; keep neutral but readable. */
+
+/* =========================
+   Inbox List
+   ========================= */
 
 .list {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .listItem {
   text-align: left;
   width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 14px;
-  padding: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius);
+  padding: 12px 12px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+  transition: transform 0.10s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
 .listItem:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(124, 140, 255, 0.30);
+  transform: translateY(-1px);
 }
 
-.badge {
-  display: inline-block;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  font-size: 0.82rem;
-  font-weight: 800;
+.listItem:active {
+  transform: translateY(0px);
 }
 
+/* Title inside list item */
+.listItem .row > div > div:first-child {
+  font-size: 14.5px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+/* From line */
+.listItem .row > div > .small {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* Snippet line */
+.listItem .small {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* =========================
+   Main Email View
+   ========================= */
+
+/* The email details card already uses .card.
+   We’ll improve message + draft sections globally. */
+
+.main .card {
+  padding: 16px;
+}
+
+/* Section headings like “Message” / “AI draft reply” */
+.main h3 {
+  margin-top: 18px;
+  margin-bottom: 10px;
+}
+
+/* Message body paragraphs look like a readable “bubble” */
+.main p {
+  color: rgba(255, 255, 255, 0.90);
+}
+
+/* Give the message block a bubble feel without changing JSX:
+   MessageBody renders <div style> with <p> children.
+   We'll target the wrapper by proximity: the element after “Message” heading. */
+.main h3 + div {
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius);
+  padding: 14px 14px;
+}
+
+/* AI draft reply <pre> styling */
 pre {
+  margin: 0;
+  padding: 14px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.92);
+  font-family: var(--mono);
+  font-size: 12.75px;
+  line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 12px;
-  border-radius: 12px;
+  overflow: auto;
+}
+
+/* Summary card inside main (you render a nested .card) */
+.main .card .card {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.10);
+  box-shadow: none;
+}
+
+/* Lists inside summary */
+.main ul {
+  margin: 10px 0 0 18px;
+  padding: 0;
+}
+.main li {
+  color: rgba(255, 255, 255, 0.85);
+  margin: 6px 0;
+}
+
+/* =========================
+   Utility polish
+   ========================= */
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+/* Make “status” line readable if you render it */
+.sidebar .small {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* =========================
+   Responsive
+   ========================= */
+
+@media (max-width: 980px) {
+  body {
+    overflow: auto;
+  }
+
+  .container {
+    height: auto;
+    min-height: 100vh;
+    grid-template-columns: 1fr;
+  }
+
+  .main {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .list {
+    max-height: 44vh;
+  }
 }

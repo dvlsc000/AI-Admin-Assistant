@@ -202,11 +202,13 @@ Summarize the following email for a gym admin.
 
 Return ONLY valid JSON in EXACTLY this shape:
 {
+  "title": "2-3 words max, plain English",
   "summary": "1-3 sentences, plain English",
   "key_points": ["up to 5 bullet points, short"]
 }
 
 Rules:
+- Title must be 2-3 words MAX.
 - Remove signatures, legal footers, and quoted replies (assume the text is already cleaned).
 - If the message is already short, keep summary very short.
 - No markdown, no extra text. Output JSON ONLY.

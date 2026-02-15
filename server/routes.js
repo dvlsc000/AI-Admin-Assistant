@@ -150,6 +150,7 @@ export function makeRoutes({ firestore, env }) {
             aiErrors++;
             await docRef.update({
               aiSummary: {
+                title: "",
                 summary: "",
                 key_points: [],
                 error: String(err?.message || err),

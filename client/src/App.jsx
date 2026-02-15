@@ -94,6 +94,13 @@ function MessageBody({ text }) {
   );
 }
 
+// Ensure UI title is 2-3 words max (defensive)
+function shortTitle(t) {
+  if (!t) return "";
+  const words = String(t).trim().split(/\s+/).filter(Boolean).slice(0, 3);
+  return words.join(" ");
+}
+
 export default function App() {
   const API = apiBase();
 
@@ -114,19 +121,15 @@ export default function App() {
 
   const authed = useMemo(() => !!me?.user, [me]);
 
+  // scroll to top when selecting a new email
   useEffect(() => {
     const key = selected?.gmailId || selected?.id;
     if (!key) return;
 
-    // If main scroll is the window/page, this always works.
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-
-    // Also try the main panel if it is scrollable
     emailViewRef.current?.scrollTo?.({ top: 0, behavior: "auto" });
-    emailViewRef.current && (emailViewRef.current.scrollTop = 0);
+    if (emailViewRef.current) emailViewRef.current.scrollTop = 0;
   }, [selected?.gmailId, selected?.id]);
-
-
 
   useEffect(() => {
     (async () => {
@@ -199,13 +202,12 @@ export default function App() {
     }
   }
 
-
   // Auto-sync once after login
   useEffect(() => {
     if (!authed) return;
 
     // Load whatever is already in Firestore right away
-    refreshEmails().catch(() => { });
+    refreshEmails().catch(() => {});
 
     if (didInitialSync) return;
 
@@ -237,7 +239,7 @@ export default function App() {
         setDidInitialSync(true);
       }
     })();
-  }, [authed, didInitialSync]);
+  }, [authed, didInitialSync]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function logout() {
     setLoading(true);
@@ -261,9 +263,7 @@ export default function App() {
     return (
       <div style={{ padding: 24, maxWidth: 720 }}>
         <h2 style={{ marginTop: 0 }}>AI Admin Assistant</h2>
-        <p className="small">
-          Connect your Gmail (readonly), triage messages, and draft replies using local AI (Ollama).
-        </p>
+        <p className="small">Connect your Gmail (readonly), triage messages, and draft replies using local AI (Ollama).</p>
 
         <div className="card">
           <div className="row">
@@ -290,17 +290,14 @@ export default function App() {
               <div style={{ fontWeight: 900 }}>{me.user.email}</div>
               <div className="small">{me.user.displayName || ""}</div>
             </div>
-            <button onClick={logout}>
-              Logout
-            </button>
+            <button onClick={logout}>Logout</button>
           </div>
+
           <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button onClick={clearAllEmails} disabled={loading || emails.length === 0}>
               Clear all
             </button>
           </div>
-
-
         </div>
 
         <h3 style={{ marginTop: 16, marginBottom: 8 }}>Inbox</h3>
@@ -309,67 +306,79 @@ export default function App() {
           {emails.length === 0 ? (
             <div className="small">{loading ? "Loading inbox…" : "No unread emails found."}</div>
           ) : (
-            emails.map((e) => (
-              <button className="listItem" key={e.gmailId} onClick={() => openEmail(e.gmailId)}>
-                <div className="row" style={{ alignItems: "flex-start" }}>
-                  <button
-                    onClick={() => deleteEmail(selected.gmailId || selected.id)}
-                    disabled={loading}
+            emails.map((e) => {
+              const displayTitle =
+                shortTitle(e.aiSummary?.title) || e.subject || "(no subject)";
+
+              return (
+                <button className="listItem" key={e.gmailId} onClick={() => openEmail(e.gmailId)}>
+                  <div className="row" style={{ alignItems: "flex-start" }}>
+                    <button
+                      onClick={(ev) => {
+                        ev.stopPropagation(); // prevent opening email
+                        deleteEmail(e.gmailId);
+                      }}
+                      disabled={loading}
+                    >
+                      Delete
+                    </button>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 900,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap"
+                        }}
+                        title={displayTitle}
+                      >
+                        {displayTitle}
+                      </div>
+
+                      <div
+                        className="small"
+                        style={{
+                          marginTop: 4,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        {e.fromEmail}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                      {e.ai?.category && <Badge>{e.ai.category}</Badge>}
+                      {e.ai?.urgency && <Badge>{e.ai.urgency}</Badge>}
+                    </div>
+                  </div>
+
+                  <div
+                    className="small"
+                    style={{
+                      marginTop: 8,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap"
+                    }}
                   >
-                    Delete email
-                  </button>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontWeight: 900,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap"
-                      }}
-                    >
-                      {e.subject || "(no subject)"}
+                    {e.snippet || ""}
+                  </div>
+
+                  {typeof e.ai?.confidence === "number" && (
+                    <div className="small" style={{ marginTop: 8 }}>
+                      Confidence: {percent(e.ai.confidence)}
                     </div>
-
-                    <div
-                      className="small"
-                      style={{
-                        marginTop: 4,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap"
-                      }}
-                    >
-                      {e.fromEmail}
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-                    {e.ai?.category && <Badge>{e.ai.category}</Badge>}
-                    {e.ai?.urgency && <Badge>{e.ai.urgency}</Badge>}
-                  </div>
-                </div>
-
-                <div
-                  className="small"
-                  style={{
-                    marginTop: 8,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap"
-                  }}
-                >
-                  {e.snippet || ""}
-                </div>
-
-                {typeof e.ai?.confidence === "number" && (
-                  <div className="small" style={{ marginTop: 8 }}>
-                    Confidence: {percent(e.ai.confidence)}
-                  </div>
-                )}
-              </button>
-            ))
+                  )}
+                </button>
+              );
+            })
           )}
         </div>
+
+        {status ? <div className="small" style={{ marginTop: 10 }}>{status}</div> : null}
       </div>
 
       <div className="main" ref={emailViewRef}>
@@ -382,13 +391,22 @@ export default function App() {
           <div className="card">
             <div className="row" style={{ alignItems: "flex-start" }}>
               <div style={{ flex: 1 }}>
-                <h2 style={{ marginTop: 0, marginBottom: 6 }}>{selected.subject || "(no subject)"}</h2>
+                <h2 style={{ marginTop: 0, marginBottom: 6 }}>
+                  {shortTitle(selected.aiSummary?.title) || selected.subject || "(no subject)"}
+                </h2>
+
                 <div className="small">
                   <b>From:</b> {selected.fromEmail}
                 </div>
                 <div className="small">
                   <b>Date:</b> {selected.dateIso || "(unknown)"}
                 </div>
+
+                {selected.aiSummary?.title ? (
+                  <div className="small" style={{ marginTop: 6 }}>
+                    <b>Original subject:</b> {selected.subject || "(no subject)"}
+                  </div>
+                ) : null}
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
@@ -401,6 +419,7 @@ export default function App() {
             {selected.aiSummary?.summary ? (
               <div className="card" style={{ marginTop: 10 }}>
                 <div style={{ fontWeight: 900, marginBottom: 6 }}>Short summary</div>
+
                 <div className="small" style={{ whiteSpace: "pre-wrap" }}>
                   {selected.aiSummary.summary}
                 </div>
@@ -430,14 +449,15 @@ export default function App() {
               >
                 Copy reply
               </button>
+
               <button onClick={() => setSelected(null)}>Close</button>
+
               <button
                 onClick={() => deleteEmail(selected.gmailId || selected.id)}
                 disabled={loading}
               >
                 Delete email
               </button>
-
             </div>
 
             <div className="small" style={{ marginTop: 12 }}>
