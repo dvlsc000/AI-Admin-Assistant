@@ -1,6 +1,6 @@
 import express from "express";
-import { makeOAuthClient, fetchLatestEmails } from "./gmail.js";
 import { triageEmail, summarizeEmail } from "./ai.js";
+import { makeOAuthClient, fetchLatestEmails, markEmailAsRead } from "./gmail.js";
 
 function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -249,14 +249,37 @@ router.delete(
     const user = req.user;
     const { gmailId } = req.params;
 
+    // 1) Mark Gmail message as read
+    const oauth2Client = makeOAuthClient({
+      clientId: env.GOOGLE_CLIENT_ID,
+      clientSecret: env.GOOGLE_CLIENT_SECRET,
+      redirectUri: env.GOOGLE_CALLBACK_URL,
+      tokens: {
+        access_token: user.accessToken,
+        refresh_token: user.refreshToken || undefined
+      }
+    });
+
+    try {
+      await markEmailAsRead({ oauth2Client, gmailId });
+    } catch (err) {
+      // If scope is wrong, you'll likely get 403 here.
+      return res.status(502).json({
+        error: "Failed to mark Gmail message as read",
+        details: err?.message || String(err)
+      });
+    }
+
+    // 2) Delete Firestore doc (your current behavior)
     const docRef = firestore.collection("users").doc(user.id).collection("emails").doc(gmailId);
     const snap = await docRef.get();
     if (!snap.exists) return res.status(404).json({ error: "Email not found" });
 
     await docRef.delete();
-    res.json({ ok: true, deleted: gmailId });
+    res.json({ ok: true, deleted: gmailId, gmailMarkedRead: true });
   })
 );
+
 
 // Delete ALL emails for this user (batched)
 router.delete(

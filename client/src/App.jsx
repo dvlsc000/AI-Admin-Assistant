@@ -184,6 +184,8 @@ export default function App() {
   const [filterCategory, setFilterCategory] = useState("ALL"); // e.g. BILLING_PAYMENT | ... | ALL
   const [sortBy, setSortBy] = useState("DATE_DESC");           // DATE_DESC, DATE_ASC, URGENCY_DESC, ...
 
+  const [deletingId, setDeletingId] = useState(null);
+
 
   // for auto-scrolling to new emails or open email details
   const emailViewRef = useRef(null);
@@ -325,25 +327,31 @@ export default function App() {
   }
 
   async function deleteEmail(gmailId) {
-    setLoading(true);
-    try {
-      await apiFetch(`/api/emails/${gmailId}`, { method: "DELETE", timeoutMs: 30000 });
+  if (!gmailId) return;
 
-      // update UI list
-      setEmails((prev) => prev.filter((e) => e.gmailId !== gmailId));
+  // optimistic remove immediately
+  const prevEmails = emails;
+  setEmails((prev) => prev.filter((e) => e.gmailId !== gmailId));
 
-      // if currently open, close it
-      if (selected?.gmailId === gmailId || selected?.id === gmailId) {
-        setSelected(null);
-      }
-
-      setStatus("Email deleted.");
-    } catch (e) {
-      setStatus(`Delete error: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
+  if (selected?.gmailId === gmailId || selected?.id === gmailId) {
+    setSelected(null);
   }
+
+  setDeletingId(gmailId);
+  try {
+    await apiFetch(`/api/emails/${gmailId}`, { method: "DELETE", timeoutMs: 30000 });
+    setStatus("Email deleted.");
+
+    // refresh right after (keeps UI consistent)
+    await refreshEmails();
+  } catch (e) {
+    setEmails(prevEmails); // rollback if delete failed
+    setStatus(`Delete error: ${e.message}`);
+  } finally {
+    setDeletingId(null);
+  }
+}
+
 
   async function clearAllEmails() {
     const ok = window.confirm("Clear ALL stored emails for this user? This cannot be undone.");
@@ -454,8 +462,6 @@ export default function App() {
             </button>
           </div>
         </div>
-
-        <h3 style={{ marginTop: 16, marginBottom: 8 }}>Inbox</h3>
         <div className="card" style={{ marginTop: 10 }}>
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -515,7 +521,7 @@ export default function App() {
         </div>
 
         <div className="list">
-          {emails.length === 0 ? (
+          {visibleEmails.length === 0 ? (
             <div className="small">{loading ? "Loading inbox…" : "No unread emails found."}</div>
           ) : (
             visibleEmails.map((e) => {
@@ -531,7 +537,7 @@ export default function App() {
                         ev.stopPropagation(); // prevent opening email
                         deleteEmail(e.gmailId);
                       }}
-                      disabled={loading}
+                      disabled={deletingId === e.gmailId}
                     >
                       Delete
                     </button>
@@ -681,7 +687,7 @@ export default function App() {
 
               <button
                 onClick={() => deleteEmail(selected.gmailId || selected.id)}
-                disabled={loading}
+                disabled={deletingId === (selected.gmailId || selected.id)}
               >
                 Delete email
               </button>
