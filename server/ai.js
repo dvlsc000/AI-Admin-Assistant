@@ -1,6 +1,13 @@
+// Used to define what ashape the model's JSON output MUST have, 
+// and to validate and safely parse the output before returning it.
 import { z } from "zod";
 
+// TriageSchema
+// Defines the exact JSON structure we expect back from the "triage" LLM call.
+// If model returns anything else (missing keys, extra keys, wrong types), we throw an error instead of returning bad data.
 const TriageSchema = z.object({
+  // Category MUST be exactly ONE of these 7 options. No more, no less.
+  // z.enum([...]) restricts the value to a fixed set of allowed labels. 
   category: z.enum([
     "CANCELLATION",
     "FREEZE_REQUEST",
@@ -10,38 +17,81 @@ const TriageSchema = z.object({
     "GENERAL_QUESTION",
     "SPAM_OTHER"
   ]),
+
+  // Urgency MUST be exactly ONE of these 3 options.
   urgency: z.enum(["LOW", "MEDIUM", "HIGH"]),
+
+  // Confidence MUST be a number between 0 and 1.
   confidence: z.number().min(0).max(1),
+
+  // reply_draft MUST be a non-empty string.
   reply_draft: z.string().min(1)
 });
 
+
+// SummarySchema
+// Defines the expected JSON structure for the "summarize" LLM call.
 const SummarySchema = z.object({
+  // Summary MUST be a non-empty string.
   summary: z.string().min(1),
+
+  // Key points is optional, but if present must be an array of 1-5 non-empty strings.
   key_points: z.array(z.string().min(1)).max(5).optional()
 });
 
+// Chooses the best available text field from the email object and returns it.
+// Priority order:
+  // 1) cleanBodyText (pre-cleaned text with signatures and quoted replies removed)
+  // 2) bodyText (full raw text of the email)
+  // 3) snippet (short preview text, may be truncated)
+// If none of these are available, returns an empty string.
+// Trims whitespace from the chosen text before returning.
 function pickMessage(email) {
   return (email.cleanBodyText || email.bodyText || email.snippet || "").trim();
 }
 
+// Pull JSON out of a string by finding the first { and the last } and parsing the text in between.
+// Needed in case model adds extra text.
+// Throws an error if no braces are found or if the JSON is malformed.
 function extractJson(text) {
+  // Find the first "{".
   const start = text.indexOf("{");
+  // Find the last "}".
   const end = text.lastIndexOf("}");
+
+  // If we can't find both, it's not valid JSON.
   if (start === -1 || end === -1) throw new Error("Model did not return JSON (no braces found).");
+
+  // Extract the substring that should be JSON and try to parse it.
+  // end + 1 because slice's end index is exclusive.
   try {
     return JSON.parse(text.slice(start, end + 1));
   } catch {
+    // If parsing fails, throw an error with the original text for debugging.
     throw new Error("Model returned malformed JSON.");
   }
 }
 
+// ollamaGenerate
+// Calls an Ollama model with the given prompt and returns the response text.
+// Parameters:
+  // - ollamaBaseUrl: base URL of the Ollama server (e.g. "http://localhost:11434")
+  // - model: name of the model to call (e.g. "triage-v1")
+  // - prompt: the text prompt to send to the model
+  // - timeoutMs: how long to wait for a response before aborting (in milliseconds)
+  // - temperature: controls randomness of the output, default is 0.2 for focused responses
 async function ollamaGenerate({ ollamaBaseUrl, model, prompt, timeoutMs, temperature = 0.2 }) {
+  // Ensure the base URL does not end with a slash to avoid double slashes in the final URL.
   const base = ollamaBaseUrl.replace(/\/$/, "");
+  // The endpoint for generating text from a model.
   const url = `${base}/api/generate`;
 
+  // Set up an AbortController to handle timeouts. If the model takes too long, we can abort the request.
   const controller = new AbortController();
+  // Start a timer that will call controller.abort() after timeoutMs milliseconds.
   const t = setTimeout(() => controller.abort(), timeoutMs);
 
+  
   try {
     const res = await fetch(url, {
       method: "POST",

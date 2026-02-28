@@ -249,7 +249,6 @@ router.delete(
     const user = req.user;
     const { gmailId } = req.params;
 
-    // 1) Mark Gmail message as read
     const oauth2Client = makeOAuthClient({
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
@@ -260,26 +259,23 @@ router.delete(
       }
     });
 
+    // Try to mark as read, but don't fail deletion if it errors
+    let gmailMarkedRead = false;
     try {
       await markEmailAsRead({ oauth2Client, gmailId });
+      gmailMarkedRead = true;
     } catch (err) {
-      // If scope is wrong, you'll likely get 403 here.
-      return res.status(502).json({
-        error: "Failed to mark Gmail message as read",
-        details: err?.message || String(err)
-      });
+      console.warn("Could not mark as read:", err?.message || err);
     }
 
-    // 2) Delete Firestore doc (your current behavior)
     const docRef = firestore.collection("users").doc(user.id).collection("emails").doc(gmailId);
     const snap = await docRef.get();
     if (!snap.exists) return res.status(404).json({ error: "Email not found" });
 
     await docRef.delete();
-    res.json({ ok: true, deleted: gmailId, gmailMarkedRead: true });
+    res.json({ ok: true, deleted: gmailId, gmailMarkedRead });
   })
 );
-
 
 // Delete ALL emails for this user (batched)
 router.delete(

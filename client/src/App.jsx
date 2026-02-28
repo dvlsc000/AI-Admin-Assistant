@@ -462,6 +462,8 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        <h3 style={{ marginTop: 16, marginBottom: 8 }}>Inbox</h3>
         <div className="card" style={{ marginTop: 10 }}>
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
